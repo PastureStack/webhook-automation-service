@@ -15,8 +15,8 @@ import (
 	"github.com/rancher/go-rancher/v2"
 	. "gopkg.in/check.v1"
 
-	"github.com/rancher/webhook-service/drivers"
-	"github.com/rancher/webhook-service/model"
+	"github.com/PastureStack/webhook-automation-service/drivers"
+	"github.com/PastureStack/webhook-automation-service/model"
 )
 
 // Hook up gocheck into the "go test" runner.

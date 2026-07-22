@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/webhook-service/drivers"
 )
 
 func (rh *RouteHandler) Execute(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -37,54 +36,45 @@ func (rh *RouteHandler) Execute(w http.ResponseWriter, r *http.Request) (int, er
 }
 
 func (rh *RouteHandler) ExecuteWithJwt(jwtSigned string, request *http.Request) (int, error) {
-	token, err := jwt.Parse(jwtSigned, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-		}
-		return rh.PublicKey, nil
-	})
-
-	if err != nil || !token.Valid {
-		return 400, fmt.Errorf("Invalid token error: %v", err)
+	claims, err := verifyJWT(jwtSigned, rh.PublicKey)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("invalid token: %v", err)
+	}
+	driverID, ok := claims["driver"].(string)
+	if !ok || driverID == "" {
+		return http.StatusBadRequest, fmt.Errorf("driver not found after decode")
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		driverID, ok := claims["driver"].(string)
-		if !ok {
-			return 400, fmt.Errorf("Driver not found after decode")
-		}
-
-		driver := drivers.GetDriver(driverID)
-		if driver == nil {
-			return 400, fmt.Errorf("Driver %s is not registered", driverID)
-		}
-
-		projectID, ok := claims["projectId"].(string)
-		if !ok {
-			return 400, fmt.Errorf("ProjectId not provided by server")
-		}
-
-		uuid, ok := claims["uuid"].(string)
-		if !ok {
-			return 400, fmt.Errorf("Uuid not found after decode")
-		}
-
-		apiClient, err := rh.ClientFactory.GetClient(projectID)
-		if err != nil {
-			return 500, err
-		}
-
-		code, err := validateWebhook(uuid, apiClient)
-		if err != nil {
-			return code, err
-		}
-
-		responseCode, err := driver.Execute(claims["config"], apiClient, request)
-		if err != nil {
-			return responseCode, fmt.Errorf("Error %v in executing driver for %s", err, driverID)
-		}
+	driver := drivers.GetDriver(driverID)
+	if driver == nil {
+		return http.StatusBadRequest, fmt.Errorf("driver %s is not registered", driverID)
 	}
-	return 200, nil
+
+	projectID, ok := claims["projectId"].(string)
+	if !ok || projectID == "" {
+		return http.StatusBadRequest, fmt.Errorf("projectId not provided by server")
+	}
+
+	uuid, ok := claims["uuid"].(string)
+	if !ok || uuid == "" {
+		return http.StatusBadRequest, fmt.Errorf("uuid not found after decode")
+	}
+
+	apiClient, err := rh.ClientFactory.GetClient(projectID)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	code, err := validateWebhook(uuid, apiClient)
+	if err != nil {
+		return code, err
+	}
+
+	responseCode, err := driver.Execute(claims["config"], apiClient, request)
+	if err != nil {
+		return responseCode, fmt.Errorf("error %v in executing driver for %s", err, driverID)
+	}
+	return http.StatusOK, nil
 }
 
 func (rh *RouteHandler) ExecuteWithKey(uuid string, projectID string, request *http.Request) (int, error) {

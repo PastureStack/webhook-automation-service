@@ -4,12 +4,12 @@ import (
 	"crypto/rsa"
 	"net/http"
 
+	"github.com/PastureStack/webhook-automation-service/drivers"
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/rancher/go-rancher/api"
 	v1client "github.com/rancher/go-rancher/client"
-	"github.com/rancher/webhook-service/drivers"
-	"github.com/rancher/webhook-service/model"
 )
 
 var schemas *v1client.Schemas
@@ -41,8 +41,7 @@ func HandleError(s *v1client.Schemas, t func(http.ResponseWriter, *http.Request)
 }
 
 type RouteHandler struct {
-	ClientFactory RancherClientFactory
-	PrivateKey    *rsa.PrivateKey
+	ClientFactory APIClientFactory
 	PublicKey     *rsa.PublicKey
 }
 

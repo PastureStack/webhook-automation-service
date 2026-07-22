@@ -3,95 +3,154 @@ package drivers
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/PastureStack/webhook-automation-service/config"
+	"github.com/PastureStack/webhook-automation-service/internal/originhttp"
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
+)
 
-	"github.com/rancher/webhook-service/config"
-	"github.com/rancher/webhook-service/model"
+const (
+	maximumWebhookBodyBytes = 1 << 20
+	maximumForwardResponse  = 1 << 20
+	forwardRequestTimeout   = 15 * time.Second
 )
 
 type ForwardPostDriver struct {
 }
 
 func (s *ForwardPostDriver) ValidatePayload(conf interface{}, apiClient *client.RancherClient) (int, error) {
-	if _, ok := conf.(model.ForwardPost); !ok {
-		return http.StatusInternalServerError, fmt.Errorf("Can't process config")
+	forwardConfig, ok := conf.(model.ForwardPost)
+	if !ok {
+		return http.StatusInternalServerError, fmt.Errorf("can't process config")
+	}
+	if err := validateForwardConfig(&forwardConfig); err != nil {
+		return http.StatusBadRequest, err
 	}
 	return http.StatusOK, nil
 }
 
 func (s *ForwardPostDriver) Execute(conf interface{}, apiClient *client.RancherClient, request *http.Request) (int, error) {
-	requestPayloadByte, err := ioutil.ReadAll(request.Body)
+	payload, err := readBoundedBody(request.Body, maximumWebhookBodyBytes)
 	if err != nil {
-		return 500, err
-	}
-	rancherConfig := config.GetConfig()
-	webhookConfig := &model.ForwardPost{}
-	if err = mapstructure.Decode(conf, webhookConfig); err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Couldn't unmarshal config")
+		return http.StatusBadRequest, err
 	}
 
-	arry := strings.Split(request.RequestURI, "?")
-	CattleAddr := rancherConfig.CattleURL[:len(rancherConfig.CattleURL)-3]
-	log.Debugf("Excute rancherConfig.CattleURL %v", CattleAddr)
-	postURL := fmt.Sprintf("%s/r/projects/%s/%s:%s%s", CattleAddr, webhookConfig.ProjectID, webhookConfig.ServiceName, webhookConfig.Port, webhookConfig.Path)
-
-	// append the query parameters to the postURL
-	if arry[1] != "" {
-		postURL += "?" + arry[1]
+	forwardConfig := &model.ForwardPost{}
+	if err = mapstructure.Decode(conf, forwardConfig); err != nil {
+		return http.StatusInternalServerError, errors.Wrap(err, "couldn't unmarshal config")
 	}
-	log.Debugf("Excute postURL %v", postURL)
-	log.Debugf("Excute requestPayloadByte %v", requestPayloadByte)
-	hopRequest, err := http.NewRequest("POST", postURL, bytes.NewBuffer(requestPayloadByte))
+	if err := validateForwardConfig(forwardConfig); err != nil {
+		return http.StatusBadRequest, err
+	}
+
+	apiConfig := config.GetConfig()
+	destination, err := forwardDestination(apiConfig.APIURL, forwardConfig, request.URL.RawQuery)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
-
-	client := &http.Client{}
-	hopRequest.Header = request.Header
-	hopRequest.SetBasicAuth(rancherConfig.CattleAccessKey, rancherConfig.CattleSecretKey)
-	resp, err := client.Do(hopRequest)
+	hopRequest, err := http.NewRequestWithContext(request.Context(), http.MethodPost, destination.String(), bytes.NewReader(payload))
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
+	copyForwardHeaders(hopRequest.Header, request.Header)
+	hopRequest.SetBasicAuth(apiConfig.AccessKey, apiConfig.SecretKey)
 
-	log.Debugf("Excute request %v", request)
-	log.Debugf("Excute config %v", webhookConfig)
-
-	respBody, err := ioutil.ReadAll(resp.Body)
+	httpClient, err := originhttp.New(&http.Client{Timeout: forwardRequestTimeout}, destination, destination)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		return http.StatusInternalServerError, fmt.Errorf("create destination-bound HTTP client: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return resp.StatusCode, errors.New(string(respBody))
+	response, err := httpClient.Do(hopRequest)
+	if err != nil {
+		return http.StatusBadGateway, fmt.Errorf("forward request failed: %w", err)
 	}
-	log.Debugf("Response StatusCode: %v,Error: %v", resp.StatusCode, string(respBody))
-	return resp.StatusCode, nil
+	defer response.Body.Close()
+	responseBody, err := readBoundedBody(response.Body, maximumForwardResponse)
+	if err != nil {
+		return http.StatusBadGateway, fmt.Errorf("read forward response: %w", err)
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		return response.StatusCode, fmt.Errorf("forwarded request returned HTTP %d", response.StatusCode)
+	}
+	_ = responseBody
+	return response.StatusCode, nil
+}
+
+func forwardDestination(apiURL string, forwardConfig *model.ForwardPost, rawQuery string) (*url.URL, error) {
+	destination, err := url.Parse(apiURL)
+	if err != nil || destination.Host == "" || destination.Hostname() == "" ||
+		(destination.Scheme != "http" && destination.Scheme != "https") ||
+		destination.User != nil || destination.Opaque != "" || destination.RawQuery != "" || destination.Fragment != "" {
+		return nil, fmt.Errorf("control-plane API URL is invalid")
+	}
+	destination.Path = fmt.Sprintf(
+		"/r/projects/%s/%s:%s%s",
+		url.PathEscape(forwardConfig.ProjectID),
+		url.PathEscape(forwardConfig.ServiceName),
+		forwardConfig.Port,
+		forwardConfig.Path,
+	)
+	destination.RawPath = ""
+	destination.RawQuery = rawQuery
+	destination.Fragment = ""
+	return destination, nil
+}
+
+func validateForwardConfig(forwardConfig *model.ForwardPost) error {
+	if forwardConfig.ProjectID == "" || strings.ContainsAny(forwardConfig.ProjectID, "/?#") {
+		return fmt.Errorf("projectId is invalid")
+	}
+	if forwardConfig.ServiceName == "" || strings.ContainsAny(forwardConfig.ServiceName, "/?#") {
+		return fmt.Errorf("serviceName is invalid")
+	}
+	port, err := strconv.Atoi(forwardConfig.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("port is invalid")
+	}
+	if forwardConfig.Path == "" || !strings.HasPrefix(forwardConfig.Path, "/") || strings.ContainsAny(forwardConfig.Path, "?#") {
+		return fmt.Errorf("path is invalid")
+	}
+	return nil
+}
+
+func copyForwardHeaders(destination, source http.Header) {
+	for name, values := range source {
+		switch strings.ToLower(name) {
+		case "authorization", "proxy-authorization", "x-forwarded-authorization", "x-original-authorization",
+			"cookie", "set-cookie", "connection",
+			"keep-alive", "proxy-authenticate", "te", "trailer", "transfer-encoding", "upgrade":
+			continue
+		}
+		for _, value := range values {
+			destination.Add(name, value)
+		}
+	}
 }
 
 func (s *ForwardPostDriver) ConvertToConfigAndSetOnWebhook(conf interface{}, webhook *model.Webhook) error {
-	if upgradeConfig, ok := conf.(model.ForwardPost); ok {
-		webhook.ForwardPostConfig = upgradeConfig
+	if forwardConfig, ok := conf.(model.ForwardPost); ok {
+		webhook.ForwardPostConfig = forwardConfig
 		webhook.ForwardPostConfig.Type = webhook.Driver
 		return nil
 	} else if configMap, ok := conf.(map[string]interface{}); ok {
-		config := model.ForwardPost{}
-		if err := mapstructure.Decode(configMap, &config); err != nil {
+		decoded := model.ForwardPost{}
+		if err := mapstructure.Decode(configMap, &decoded); err != nil {
 			return err
 		}
-		webhook.ForwardPostConfig = config
+		webhook.ForwardPostConfig = decoded
 		webhook.ForwardPostConfig.Type = webhook.Driver
 		return nil
 	}
-	return fmt.Errorf("Can't convert config %v", conf)
+	return fmt.Errorf("can't convert config")
 }
 
 func (s *ForwardPostDriver) GetDriverConfigResource() interface{} {
@@ -100,4 +159,19 @@ func (s *ForwardPostDriver) GetDriverConfigResource() interface{} {
 
 func (s *ForwardPostDriver) CustomizeSchema(schema *v1client.Schema) *v1client.Schema {
 	return schema
+}
+
+func readBoundedBody(body io.Reader, maximum int64) ([]byte, error) {
+	if body == nil {
+		return nil, nil
+	}
+	limited := io.LimitReader(body, maximum+1)
+	payload, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(payload)) > maximum {
+		return nil, fmt.Errorf("request body exceeds %d bytes", maximum)
+	}
+	return payload, nil
 }

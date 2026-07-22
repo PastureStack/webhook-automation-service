@@ -1,20 +1,59 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# PastureStack formatting, dependency, static-analysis, and public-content gates.
+set -euo pipefail
 
-cd $(dirname $0)/..
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${repo_root}"
 
-echo Running validation
+go_version="$(GO111MODULE=off GOTOOLCHAIN=local go env GOVERSION)"
+if [[ ! "${go_version}" =~ ^go1\.26([.]|$) ]]; then
+    printf 'Go 1.26 is required; found %s\n' "${go_version}" >&2
+    exit 1
+fi
 
-PACKAGES=". $(find -name '*.go' | xargs -I{} dirname {} |  cut -f2 -d/ | sort -u | grep -Ev '(^\.$|.git|.trash-cache|vendor|bin)' | sed -e 's!^!./!' -e 's!$!/...!')"
+mapfile -t unformatted < <(find . \
+    -path './vendor' -prune -o \
+    -path './bin' -prune -o \
+    -path './dist' -prune -o \
+    -name '*.go' -type f -print | sort | xargs gofmt -l)
+if (( ${#unformatted[@]} > 0 )); then
+    printf 'Unformatted Go source:\n%s\n' "${unformatted[@]}" >&2
+    exit 1
+fi
 
-echo Running: go vet
-go vet ${PACKAGES}
-echo Running: golint
-for i in ${PACKAGES}; do
-    if [ -n "$(golint $i | grep -v 'should have comment.*or be unexported' | grep -v 'method ById should be ByID' | tee /dev/stderr)" ]; then
-        failed=true
-    fi
+GO111MODULE=off GOTOOLCHAIN=local CGO_ENABLED=0 go vet ./...
+if GO111MODULE=off GOTOOLCHAIN=local go list -deps ./... | \
+    grep -E 'dgrijalva/jwt-go|rancher-auth-service|dchest/uniuri' >/dev/null; then
+    printf 'Removed security-sensitive dependency remains in the build graph.\n' >&2
+    exit 1
+fi
+
+for legal_file in \
+    vendor/github.com/gorilla/context/LICENSE \
+    vendor/github.com/gorilla/mux/LICENSE \
+    vendor/github.com/gorilla/websocket/LICENSE \
+    vendor/github.com/mitchellh/mapstructure/LICENSE \
+    vendor/github.com/pkg/errors/LICENSE \
+    vendor/github.com/rancher/go-rancher/LICENSE \
+    vendor/github.com/Sirupsen/logrus/LICENSE \
+    vendor/github.com/urfave/cli/LICENSE \
+    vendor/gopkg.in/check.v1/LICENSE; do
+    test -f "${legal_file}"
 done
-test -z "$failed"
-echo Running: go fmt
-test -z "$(go fmt ${PACKAGES} | tee /dev/stderr)"
+
+expected_vendor_lock="$(cat <<'EOF'
+gopkg.in/check.v1 4f90aeace3a26ad7021961c297b22c42160c7b25
+github.com/Sirupsen/logrus v0.10.0
+github.com/urfave/cli v1.18.0
+github.com/rancher/go-rancher cbc1b0a3f68db14c8d074ffc7fe2ca3b26a82c91
+github.com/pkg/errors 248dadf4e9068a0b3e79f02ed0a610d935de5302
+github.com/gorilla/context 215affda49addc4c8ef7e2534915df2c8c35c6cd
+github.com/gorilla/mux f15e0c49460fd49eebe2bcc8486b05d1bef68d3a
+github.com/gorilla/websocket 1551221275a7bd42978745a376b2531f791d88f3
+github.com/mitchellh/mapstructure bfdb1a85537d60bc7e954e600c250219ea497417
+EOF
+)"
+actual_vendor_lock="$(grep -Ev '^[[:space:]]*(#|$)' vendor.lock)"
+test "${actual_vendor_lock}" = "${expected_vendor_lock}"
+
+"${repo_root}/scripts/check-content-policy"

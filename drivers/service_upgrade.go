@@ -3,18 +3,17 @@ package drivers
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/PastureStack/webhook-automation-service/model"
 	log "github.com/Sirupsen/logrus"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/webhook-service/model"
 )
 
 var regTag = regexp.MustCompile(`^[\w]+[\w.-]*`)
@@ -28,7 +27,7 @@ func (s *ServiceUpgradeDriver) ValidatePayload(conf interface{}, apiClient *clie
 		return http.StatusInternalServerError, fmt.Errorf("Can't process config")
 	}
 
-	if config.ServiceSelector == nil {
+	if len(config.ServiceSelector) == 0 {
 		return http.StatusBadRequest, fmt.Errorf("Service selectors not provided")
 	}
 
@@ -55,9 +54,9 @@ func (s *ServiceUpgradeDriver) ValidatePayload(conf interface{}, apiClient *clie
 func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.RancherClient, request *http.Request) (int, error) {
 	var requestPayload interface{}
 	if request.Body != nil {
-		bytes, err := ioutil.ReadAll(request.Body)
+		bytes, err := readBoundedBody(request.Body, maximumWebhookBodyBytes)
 		if err != nil {
-			return http.StatusInternalServerError, fmt.Errorf("Error reading request body in Execute handler: %v", err)
+			return http.StatusBadRequest, fmt.Errorf("error reading request body in Execute handler: %v", err)
 		}
 
 		if len(bytes) > 0 {
@@ -86,20 +85,20 @@ func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.Ranch
 	pushedTag := ""
 	switch config.PayloadFormat {
 	case "alicloud":
-		pushedData, ok := requestBody["push_data"]
+		pushedData, ok := objectValue(requestBody, "push_data")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Incomplete Alicloud Docker Hub webhook response provided")
 		}
-		pushedTag, ok = pushedData.(map[string]interface{})["tag"].(string)
+		pushedTag, ok = stringValue(pushedData, "tag")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Alicloud Docker Hub webhook response contains no tag")
 		}
-		repository, ok := requestBody["repository"]
+		repository, ok := objectValue(requestBody, "repository")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Alicloud Docker Hub response provided without repository information")
 		}
-		alicloudFullName, fullnameOk := repository.(map[string]interface{})["repo_full_name"].(string)
-		alicloudRegion, regionOk := repository.(map[string]interface{})["region"].(string)
+		alicloudFullName, fullnameOk := stringValue(repository, "repo_full_name")
+		alicloudRegion, regionOk := stringValue(repository, "region")
 		if fullnameOk && regionOk {
 			addressType := config.AddressType
 			if addressType == "" {
@@ -111,20 +110,20 @@ func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.Ranch
 			return http.StatusBadRequest, fmt.Errorf("Alicloud Docker Hub response provided without image name")
 		}
 	case "azure":
-		pushedData, ok := requestBody["target"]
+		pushedData, ok := objectValue(requestBody, "target")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Incomplete Azure Container Reigstry webhook response provided")
 		}
-		pushedTag, ok = pushedData.(map[string]interface{})["tag"].(string)
+		pushedTag, ok = stringValue(pushedData, "tag")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Azure Container Reigstry webhook response contains no tag")
 		}
-		repository, ok := requestBody["request"]
+		repository, ok := objectValue(requestBody, "request")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Azure Container Reigstry response provided without request information")
 		}
-		azureHost, hostOk := repository.(map[string]interface{})["host"].(string)
-		azureRepo, repoOk := pushedData.(map[string]interface{})["repository"].(string)
+		azureHost, hostOk := stringValue(repository, "host")
+		azureRepo, repoOk := stringValue(pushedData, "repository")
 		if hostOk && repoOk {
 			imageName := azureHost + "/" + azureRepo
 			pushedImage = imageName + ":" + pushedTag
@@ -132,19 +131,19 @@ func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.Ranch
 			return http.StatusBadRequest, fmt.Errorf("Azure Container Reigstry response provided without image name")
 		}
 	default:
-		pushedData, ok := requestBody["push_data"]
+		pushedData, ok := objectValue(requestBody, "push_data")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Incomplete webhook response provided")
 		}
-		pushedTag, ok = pushedData.(map[string]interface{})["tag"].(string)
+		pushedTag, ok = stringValue(pushedData, "tag")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Webhook response contains no tag")
 		}
-		repository, ok := requestBody["repository"]
+		repository, ok := objectValue(requestBody, "repository")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Response provided without repository information")
 		}
-		imageName, ok := repository.(map[string]interface{})["repo_name"].(string)
+		imageName, ok := stringValue(repository, "repo_name")
 		if !ok {
 			return http.StatusBadRequest, fmt.Errorf("Response provided without image name")
 		}
@@ -192,6 +191,10 @@ func upgradeServices(apiClient *client.RancherClient, config *model.ServiceUpgra
 
 func batchUpgrade(apiClient *client.RancherClient, collection []client.Service, serviceSelector map[string]string, config *model.ServiceUpgrade, pushedImage string) {
 	for _, service := range collection {
+		if service.LaunchConfig == nil {
+			log.Warnf("Skipping service %s because it has no launch configuration", service.Id)
+			continue
+		}
 		secondaryPresent := false
 		primaryPresent := false
 		primaryLabels := service.LaunchConfig.Labels
@@ -200,6 +203,9 @@ func batchUpgrade(apiClient *client.RancherClient, collection []client.Service, 
 			labels := secLaunchConfig.Labels
 			if isMatchedService(serviceSelector, labels) {
 				secLaunchConfig.ImageUuid = "docker:" + pushedImage
+				if secLaunchConfig.Labels == nil {
+					secLaunchConfig.Labels = map[string]interface{}{}
+				}
 				secLaunchConfig.Labels["io.rancher.container.pull_image"] = "always"
 				secConfigs = append(secConfigs, secLaunchConfig)
 				secondaryPresent = true
@@ -210,6 +216,9 @@ func batchUpgrade(apiClient *client.RancherClient, collection []client.Service, 
 		if isMatchedService(serviceSelector, primaryLabels) {
 			primaryPresent = true
 			newLaunchConfig.ImageUuid = "docker:" + pushedImage
+			if newLaunchConfig.Labels == nil {
+				newLaunchConfig.Labels = map[string]interface{}{}
+			}
 			newLaunchConfig.Labels["io.rancher.container.pull_image"] = "always"
 		}
 
@@ -263,7 +272,8 @@ func isMatchedService(serviceSelector map[string]string, serviceLabels map[strin
 	for key, value := range serviceSelector {
 		found := false
 		for k, v := range serviceLabels {
-			if strings.EqualFold(k, key) && (value == "" || strings.EqualFold(v.(string), value)) {
+			label, ok := v.(string)
+			if ok && strings.EqualFold(k, key) && (value == "" || strings.EqualFold(label, value)) {
 				found = true
 				break
 			}
@@ -273,6 +283,24 @@ func isMatchedService(serviceSelector map[string]string, serviceLabels map[strin
 		}
 	}
 	return true
+}
+
+func objectValue(object map[string]interface{}, key string) (map[string]interface{}, bool) {
+	value, ok := object[key]
+	if !ok {
+		return nil, false
+	}
+	nested, ok := value.(map[string]interface{})
+	return nested, ok
+}
+
+func stringValue(object map[string]interface{}, key string) (string, bool) {
+	value, ok := object[key]
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok && text != ""
 }
 
 func (s *ServiceUpgradeDriver) ConvertToConfigAndSetOnWebhook(conf interface{}, webhook *model.Webhook) error {

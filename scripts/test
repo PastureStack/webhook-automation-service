@@ -1,11 +1,15 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# PastureStack unit, coverage, and race tests.
+set -euo pipefail
 
-cd $(dirname $0)/..
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${repo_root}"
 
-echo Running tests
+go_version="$(GO111MODULE=off GOTOOLCHAIN=local go env GOVERSION)"
+if [[ ! "${go_version}" =~ ^go1\.26([.]|$) ]]; then
+    printf 'Go 1.26 is required; found %s\n' "${go_version}" >&2
+    exit 1
+fi
 
-PACKAGES=". $(find -name '*.go' | xargs -I{} dirname {} |  cut -f2 -d/ | sort -u | grep -Ev '(^\.$|.git|.trash-cache|vendor|bin)' | sed -e 's!^!./!' -e 's!$!/...!')"
-
-[ "${ARCH}" == "amd64" ] && RACE=-race
-go test ${RACE} -cover -tags=test ${PACKAGES}
+GO111MODULE=off GOTOOLCHAIN=local CGO_ENABLED=0 go test -count=1 -cover -tags=test ./...
+GO111MODULE=off GOTOOLCHAIN=local CGO_ENABLED=1 go test -count=1 -race -tags=test ./...

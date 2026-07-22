@@ -1,6 +1,6 @@
 package model
 
-//ScaleService driver
+// ScaleService driver
 type ScaleService struct {
 	ServiceID   string `json:"serviceId,omitempty" mapstructure:"serviceId"`
 	ScaleChange int64  `json:"amount,omitempty" mapstructure:"amount"`
@@ -10,7 +10,7 @@ type ScaleService struct {
 	Type        string `json:"type,omitempty" mapstructure:"type"`
 }
 
-//ServiceUpgrade driver
+// ServiceUpgrade driver
 type ServiceUpgrade struct {
 	ServiceSelector map[string]string `json:"serviceSelector,omitempty" mapstructure:"serviceSelector"`
 	Tag             string            `json:"tag,omitempty" mapstructure:"tag"`
@@ -22,7 +22,7 @@ type ServiceUpgrade struct {
 	Type            string            `json:"type,omitempty" mapstructure:"type"`
 }
 
-//ScaleHost driver
+// ScaleHost driver
 type ScaleHost struct {
 	HostSelector map[string]string `json:"hostSelector,omitempty" mapstructure:"hostSelector"`
 	Amount       int64             `json:"amount,omitempty" mapstructure:"amount"`
@@ -33,7 +33,7 @@ type ScaleHost struct {
 	Type         string            `json:"type,omitempty" mapstructure:"type"`
 }
 
-//ForwardPost driver
+// ForwardPost driver
 type ForwardPost struct {
 	ProjectID   string `json:"projectId,omitempty" mapstructure:"projectId"`
 	ServiceName string `json:"serviceName,omitempty" mapstructure:"serviceName"`

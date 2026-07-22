@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# PastureStack public-content boundary: inherited compatibility only, no local data.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+export PASTURESTACK_CONTENT_POLICY_ROOT="${repo_root}"
+
+python3 - <<'PY'
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from pathlib import Path
+
+
+root = Path(os.environ["PASTURESTACK_CONTENT_POLICY_ROOT"])
+excluded_roots = {".git", "bin", "dist", "vendor"}
+old_service_name = "webhook-service"
+old_service_allowed = {
+    "COMPATIBILITY.md",
+    "ORIGIN.md",
+    "README.md",
+    "THIRD-PARTY-NOTICES.md",
+    "scripts/check-content-policy",
+    "scripts/package",
+}
+
+generic_forbidden = {
+    "Windows user profile path": re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE),
+    "macOS user profile path": re.compile(r"/Users/[^/\s]+", re.IGNORECASE),
+    "Linux user profile path": re.compile(r"/home/[^/\s]+", re.IGNORECASE),
+    "RFC1918 address": re.compile(
+        r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b"
+    ),
+    "personal mailbox domain": re.compile(
+        r"@[A-Za-z0-9._%+-]*(?:gmail|hotmail|outlook|yahoo)\.[A-Za-z]{2,}",
+        re.IGNORECASE,
+    ),
+    "Han character in public English source": re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]"),
+    "private key material": re.compile(r"-----BEGIN [^-]*PRIVATE KEY-----"),
+}
+
+private_literals: list[str] = []
+pattern_path = os.environ.get("PASTURESTACK_PRIVATE_PATTERN_FILE", "").strip()
+if pattern_path:
+    candidate = Path(pattern_path).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        pass
+    else:
+        raise SystemExit("The private pattern file must remain outside the public repository")
+    private_literals = [
+        line.strip().casefold()
+        for line in candidate.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+failures: list[str] = []
+for path in sorted(root.rglob("*")):
+    if not path.is_file() or any(part in excluded_roots for part in path.relative_to(root).parts):
+        continue
+    relative = path.relative_to(root).as_posix()
+    payload = path.read_bytes()
+    if b"\x00" in payload:
+        continue
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        failures.append(f"{relative}: not valid UTF-8")
+        continue
+    folded = text.casefold()
+    if old_service_name in folded and relative not in old_service_allowed:
+        failures.append(f"{relative}: retired service identity outside compatibility/legal allowlist")
+    if relative != "scripts/check-content-policy" and "releases.rancher.com" in folded:
+        failures.append(f"{relative}: retired artifact host")
+    if relative != "scripts/check-content-policy":
+        for label, pattern in generic_forbidden.items():
+            match = pattern.search(text)
+            if match:
+                line = text.count("\n", 0, match.start()) + 1
+                failures.append(f"{relative}:{line}: {label}")
+    for literal in private_literals:
+        if literal in folded:
+            failures.append(f"{relative}: matched a private local-only literal")
+
+tracked = subprocess.run(
+    ["git", "-c", f"safe.directory={root}", "-C", str(root), "ls-files"],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.splitlines()
+for relative in tracked:
+    if (root / relative).exists() and relative.casefold().endswith((".pem", ".key", ".p12", ".pfx")):
+        failures.append(f"{relative}: tracked key-material extension")
+
+if failures:
+    print("PUBLIC_CONTENT_POLICY_FAILED", file=__import__("sys").stderr)
+    for failure in failures:
+        print(failure, file=__import__("sys").stderr)
+    raise SystemExit(1)
+print("PUBLIC_CONTENT_POLICY_OK")
+PY

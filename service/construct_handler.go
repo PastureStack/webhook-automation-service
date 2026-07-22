@@ -1,21 +1,25 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"mime"
 	"net/http"
 	"reflect"
 	"strings"
 
+	"github.com/PastureStack/webhook-automation-service/drivers"
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/Sirupsen/logrus"
-	"github.com/dchest/uniuri"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/api"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/webhook-service/drivers"
-	"github.com/rancher/webhook-service/model"
 )
+
+const maximumConfigurationBodyBytes = 1 << 20
 
 func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request) (int, error) {
 	if readonlyRoles[getRoles(r)] {
@@ -25,14 +29,14 @@ func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request)
 
 	wh := &model.Webhook{}
 	logrus.Infof("Construct Payload")
-	requestBytes, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return 500, err
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return http.StatusBadRequest, fmt.Errorf("Content-Type must be application/json")
 	}
-
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "application/json" {
-		return 400, fmt.Errorf("Content-Type must be supplied as header. Only application/json is supported")
+	r.Body = http.MaxBytesReader(w, r.Body, maximumConfigurationBodyBytes)
+	requestBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("read request body: %w", err)
 	}
 
 	projectID, errCode, err := getProjectID(r)
@@ -77,7 +81,10 @@ func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request)
 		return code, err
 	}
 
-	uuid := uniuri.NewLen(40)
+	uuid, err := newWebhookKey()
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("generate webhook key: %w", err)
+	}
 
 	url := apiContext.UrlBuilder.Version("v1-webhooks")
 	url = url + "/endpoint?key=" + uuid + "&projectId=" + projectID
@@ -96,6 +103,14 @@ func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request)
 	}
 	apiContext.WriteResource(whResponse)
 	return 200, nil
+}
+
+func newWebhookKey() (string, error) {
+	random := make([]byte, 30)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(random), nil
 }
 
 func saveWebhook(uuid string, name string, driver string, url string, config interface{}, apiClient *client.RancherClient) (*client.GenericObject, error) {

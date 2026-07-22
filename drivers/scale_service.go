@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/webhook-service/model"
 )
 
 type ScaleServiceDriver struct {
@@ -59,6 +59,9 @@ func (s *ScaleServiceDriver) ValidatePayload(conf interface{}, apiClient *client
 
 	if service.Kind != "service" && service.Kind != "loadBalancerService" {
 		return http.StatusBadRequest, fmt.Errorf("Can only create webhooks for Services. The supplied service is of type %v", service.Kind)
+	}
+	if service.LaunchConfig == nil {
+		return http.StatusBadRequest, fmt.Errorf("service %s has no launch configuration", config.ServiceID)
 	}
 
 	if val, ok := service.LaunchConfig.Labels["io.rancher.scheduler.global"]; ok {
@@ -115,7 +118,10 @@ func (s *ScaleServiceDriver) Execute(conf interface{}, apiClient *client.Rancher
 		CurrentScale: newScale,
 	})
 	if err != nil {
-		statusCode := err.(*client.ApiError).StatusCode
+		statusCode := http.StatusInternalServerError
+		if apiError, ok := err.(*client.ApiError); ok && apiError.StatusCode >= 400 {
+			statusCode = apiError.StatusCode
+		}
 		return statusCode, errors.Wrap(err, "Error in updateService")
 	}
 	return http.StatusOK, nil

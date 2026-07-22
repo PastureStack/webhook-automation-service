@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -12,13 +11,13 @@ import (
 	"strings"
 	"time"
 
+	runtimeconfig "github.com/PastureStack/webhook-automation-service/config"
+	"github.com/PastureStack/webhook-automation-service/model"
 	log "github.com/Sirupsen/logrus"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
-	rConfig "github.com/rancher/webhook-service/config"
-	"github.com/rancher/webhook-service/model"
 )
 
 var re = regexp.MustCompile("[0-9]+$")
@@ -44,7 +43,7 @@ func (s *ScaleHostDriver) ValidatePayload(conf interface{}, apiClient *client.Ra
 		return http.StatusBadRequest, fmt.Errorf("Invalid amount: %v", config.Amount)
 	}
 
-	if config.HostSelector == nil {
+	if len(config.HostSelector) == 0 {
 		return http.StatusBadRequest, fmt.Errorf("HostSelector not provided")
 	}
 
@@ -80,6 +79,9 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 	var count, index, newHostScale, baseHostIndex int64
 	httpClient := &http.Client{
 		Timeout: time.Second * 10,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	config := &model.ScaleHost{}
@@ -99,13 +101,16 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		hostSelector[key] = value
 	}
 
-	cattleConfig := rConfig.GetConfig()
-	cattleURL := cattleConfig.CattleURL
-	u, err := url.Parse(cattleURL)
-	if err != nil {
-		panic(err)
+	apiConfig := runtimeconfig.GetConfig()
+	apiURL, err := url.Parse(apiConfig.APIURL)
+	if err != nil || apiURL.Host == "" || (apiURL.Scheme != "http" && apiURL.Scheme != "https") {
+		return http.StatusInternalServerError, fmt.Errorf("control-plane API URL is invalid")
 	}
-	cattleURL = strings.Split(cattleURL, u.Path)[0] + "/v2-beta"
+	apiURL.Path = "/v2-beta"
+	apiURL.RawPath = ""
+	apiURL.RawQuery = ""
+	apiURL.Fragment = ""
+	cattleURL := strings.TrimRight(apiURL.String(), "/")
 
 	filters := make(map[string]interface{})
 	filters["sort"] = "created"
@@ -113,6 +118,9 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 	hostCollection, err := apiClient.Host.List(&client.ListOpts{
 		Filters: filters,
 	})
+	if err != nil {
+		return http.StatusBadGateway, fmt.Errorf("list hosts: %w", err)
+	}
 	if len(hostCollection.Data) == 0 {
 		return http.StatusBadRequest, fmt.Errorf("No hosts for scaling found")
 	}
@@ -121,20 +129,7 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 	hostSelectorPresent := false
 	baseHostIndex = -1
 	for _, host := range hostCollection.Data {
-		labels := host.Labels
-		labelFound := false
-		for k, v := range labels {
-			if !strings.EqualFold(k, key) {
-				continue
-			}
-			if !strings.EqualFold(v.(string), value) {
-				continue
-			}
-			labelFound = true
-			break
-		}
-
-		if !labelFound {
+		if !matchesHostSelector(host.Labels, hostSelector) {
 			continue
 		}
 
@@ -146,7 +141,7 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		hostScalingGroup = append(hostScalingGroup, host)
 
 		if host.Driver != "" {
-			baseHostIndex++
+			baseHostIndex = int64(len(hostScalingGroup) - 1)
 		}
 	}
 
@@ -174,12 +169,15 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		}
 		baseHostName = strings.Split(baseHostName, ".")[0]
 		baseSuffix := re.FindString(baseHostName)
-		basePrefix := strings.TrimRight(baseHostName, baseSuffix)
+		basePrefix := strings.TrimSuffix(baseHostName, baseSuffix)
+		if basePrefix == "" {
+			return http.StatusBadRequest, fmt.Errorf("base host name cannot consist only of a numeric suffix")
+		}
 
 		// Use raw call to get host so as to get additional driver config
 		getURL := cattleURL + "/projects/" + host.AccountId + "/hosts/" + host.Id
 		log.Infof("Getting config for host %s as base host for cloning", host.Id)
-		hostRaw, err := getHosts(getURL, httpClient, cattleConfig.CattleAccessKey, cattleConfig.CattleSecretKey)
+		hostRaw, err := getHosts(getURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
@@ -226,7 +224,7 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 			hostRaw["hostname"] = name
 
 			log.Infof("Creating host with hostname: %s", name)
-			code, err := createHost(hostRaw, hostCreateURL, httpClient, cattleConfig.CattleAccessKey, cattleConfig.CattleSecretKey)
+			code, err := createHost(hostRaw, hostCreateURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
 			if err != nil {
 				return code, err
 			}
@@ -243,6 +241,9 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		badHosts := make(map[string]bool)
 		deleteCount := int64(0)
 		for _, host := range hostScalingGroup {
+			if deleteCount >= amount {
+				break
+			}
 			state := host.State
 			if state == "inactive" || state == "deactivating" || state == "reconnecting" || state == "disconnected" {
 				badHosts[host.Id] = true
@@ -260,6 +261,9 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		if deleteOption == "mostRecent" {
 			log.Infof("Deleting most recently created hosts")
 			for count < amount {
+				if delIndex >= int64(len(hostScalingGroup)) {
+					return http.StatusInternalServerError, fmt.Errorf("insufficient hosts available for scale down")
+				}
 				host := hostScalingGroup[delIndex]
 				if badHosts[host.Id] {
 					delIndex++
@@ -276,6 +280,9 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		} else if deleteOption == "leastRecent" {
 			log.Infof("Deleting least recently created hosts")
 			for count < amount {
+				if delIndex >= int64(len(hostScalingGroup)) {
+					return http.StatusInternalServerError, fmt.Errorf("insufficient hosts available for scale down")
+				}
 				index = (int64(len(hostScalingGroup)) - delIndex) - 1
 				host := hostScalingGroup[index]
 				if badHosts[host.Id] {
@@ -365,7 +372,7 @@ func getHosts(hostURL string, httpClient *http.Client, accessKey string, secretK
 		return nil, fmt.Errorf("Error %s in http.Get of host", resp.Status)
 	}
 
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	respBytes, err := readBoundedBody(resp.Body, 8<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -426,4 +433,21 @@ func leftPad(str, pad string, length int) string {
 		}
 		str = pad + str
 	}
+}
+
+func matchesHostSelector(labels map[string]interface{}, selector map[string]string) bool {
+	for expectedKey, expectedValue := range selector {
+		matched := false
+		for key, rawValue := range labels {
+			value, ok := rawValue.(string)
+			if ok && strings.EqualFold(key, expectedKey) && strings.EqualFold(value, expectedValue) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }

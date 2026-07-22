@@ -1,0 +1,217 @@
+name: Security release gate
+
+on:
+  push:
+    branches:
+      - 'verification/webhook-automation-service-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webhook-automation-service-security-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Build, test, reproduce, scan, and inventory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CANDIDATE_VERSION: 0.10.1
+      GO_VERSION: 1.26.5
+      GO_LINUX_AMD64_SHA256: 5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053
+      TRIVY_IMAGE: aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c
+      TRIVY_CACHE: /tmp/pasturestack-webhook-automation-service-trivy-cache
+      GO111MODULE: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out the complete reviewed history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source, history, and privacy boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-list --count 5d68737e9c5edafc70a4963ffca1466e0b95c708..HEAD)" -eq 1
+          test "$(git rev-list --count --merges 5d68737e9c5edafc70a4963ffca1466e0b95c708..HEAD)" -eq 0
+          source scripts/version
+          test "$VERSION" = "$CANDIDATE_VERSION"
+          private_pattern=$(printf '%s|%s|%s' 'chen''21019' '10\.0\.0\.''125' 'C:\\''Users\\')
+          if git grep -n -E "$private_pattern" -- .; then
+            echo 'Private operator data is present in the public source tree.' >&2
+            exit 1
+          fi
+          mkdir -p evidence
+          printf '%s\n' "$GITHUB_SHA" > evidence/source-revision.txt
+          git ls-tree -r --name-only HEAD | LC_ALL=C sort > evidence/source-tree.txt
+          sha256sum vendor.lock > evidence/vendor-lock.sha256
+
+      - name: Install verified Go toolchain and create the GOPATH view
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="go${GO_VERSION}.linux-amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "/tmp/${archive}" "https://go.dev/dl/${archive}"
+          printf '%s  %s\n' "$GO_LINUX_AMD64_SHA256" "/tmp/${archive}" | sha256sum -c -
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "/tmp/${archive}"
+          printf '/usr/local/go/bin\n' >> "$GITHUB_PATH"
+          candidate_gopath="$RUNNER_TEMP/webhook-automation-service-gopath"
+          printf 'GOPATH=%s\n' "$candidate_gopath" >> "$GITHUB_ENV"
+          mkdir -p "$candidate_gopath/src/github.com/PastureStack"
+          ln -s "$GITHUB_WORKSPACE" "$candidate_gopath/src/github.com/PastureStack/webhook-automation-service"
+          /usr/local/go/bin/go version | grep -Fx "go version go${GO_VERSION} linux/amd64"
+
+      - name: Validate, test, integrate, and build reproducibly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          export PATH="/usr/local/go/bin:$PATH"
+          make validate
+          make test
+          make build
+          cp bin/webhook-automation-service evidence/webhook-automation-service.first
+          rm -f bin/webhook-automation-service
+          make build
+          cmp evidence/webhook-automation-service.first bin/webhook-automation-service
+          mv evidence/webhook-automation-service.first evidence/webhook-automation-service-linux-amd64
+          bin/webhook-automation-service --version | grep -Fx "webhook-automation-service version ${CANDIDATE_VERSION}"
+          make integration-test
+          go version -m bin/webhook-automation-service > evidence/webhook-automation-service-go-version.txt
+          sha256sum bin/webhook-automation-service > evidence/webhook-automation-service.sha256
+
+      - name: Prove deterministic archive and its contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          export PATH="/usr/local/go/bin:$PATH"
+          make package
+          make verify-artifact
+          artifact="dist/artifacts/webhook-automation-service-${CANDIDATE_VERSION}-linux-amd64.tar.xz"
+          cp "$artifact" evidence/webhook-automation-service.first.tar.xz
+          rm -f "$artifact"
+          make package
+          cmp evidence/webhook-automation-service.first.tar.xz "$artifact"
+          cp "$artifact" evidence/webhook-automation-service-${CANDIDATE_VERSION}-linux-amd64.tar.xz
+          sha256sum "$artifact" > evidence/webhook-automation-service-archive.sha256
+
+      - name: Run reachable Go vulnerability analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          export PATH="/usr/local/go/bin:$PATH"
+          tool_dir="$RUNNER_TEMP/security-tools"
+          mkdir -p "$tool_dir"
+          GO111MODULE=on GOBIN="$tool_dir" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          "$tool_dir/govulncheck" -mode=binary -json bin/webhook-automation-service \
+            > evidence/govulncheck-binary.json
+          if jq -e 'select(.finding != null)' evidence/govulncheck-binary.json >/dev/null; then
+            echo 'A reachable Go vulnerability remains.' >&2
+            exit 1
+          fi
+
+      - name: Scan source and release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          mkdir -p "$TRIVY_CACHE"
+          docker pull "$TRIVY_IMAGE"
+          docker image inspect "$TRIVY_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
+            grep -Fq 'aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c'
+          test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.73.0'
+          source_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-source.XXXXXX")
+          artifact_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-artifact.XXXXXX")
+          git archive HEAD | tar -x -C "$source_tree"
+          tar -xJf "dist/artifacts/webhook-automation-service-${CANDIDATE_VERSION}-linux-amd64.tar.xz" -C "$artifact_tree"
+          docker run --rm -v "$TRIVY_CACHE:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image --cache-dir /root/.cache/trivy --download-db-only
+          run_scan() {
+            local source=$1
+            local destination=$2
+            docker run --rm --network none \
+              -v "$TRIVY_CACHE:/root/.cache/trivy" \
+              -v "$source:/scan:ro" \
+              -v "$PWD/evidence:/evidence" \
+              "$TRIVY_IMAGE" fs --cache-dir /root/.cache/trivy \
+              --skip-db-update --offline-scan --scanners vuln,secret \
+              --severity CRITICAL,HIGH --format json \
+              --output "/evidence/${destination}" /scan
+          }
+          run_scan "$source_tree" source-security.json
+          run_scan "$artifact_tree" artifact-security.json
+          docker run --rm --network none \
+            -v "$TRIVY_CACHE:/root/.cache/trivy" \
+            -v "$source_tree:/scan:ro" \
+            -v "$PWD/evidence:/evidence" \
+            "$TRIVY_IMAGE" fs --cache-dir /root/.cache/trivy \
+            --skip-db-update --offline-scan --format cyclonedx \
+            --output /evidence/source-sbom.cdx.json /scan
+          docker run --rm --network none \
+            -v "$TRIVY_CACHE:/root/.cache/trivy" \
+            -v "$artifact_tree:/scan:ro" \
+            -v "$PWD/evidence:/evidence" \
+            "$TRIVY_IMAGE" fs --cache-dir /root/.cache/trivy \
+            --skip-db-update --offline-scan --format cyclonedx \
+            --output /evidence/artifact-sbom.cdx.json /scan
+          rm -rf -- "$source_tree" "$artifact_tree"
+
+      - name: Enforce zero Critical, High, or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          : > evidence/security-summary.txt
+          for scope in source artifact; do
+            report="evidence/${scope}-security.json"
+            secrets=$(jq '[.Results[]?.Secrets[]?] | length' "$report")
+            critical=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$report")
+            high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "$report")
+            printf '%s_secrets=%s\n%s_critical=%s\n%s_high=%s\n' \
+              "$scope" "$secrets" "$scope" "$critical" "$scope" "$high" \
+              | tee -a evidence/security-summary.txt
+            test "$secrets" -eq 0
+            test "$critical" -eq 0
+            test "$high" -eq 0
+          done
+
+      - name: Record evidence checksums
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          find evidence -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z |
+            xargs -0 sha256sum > evidence/SHA256SUMS
+
+      - name: Upload short-lived verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: webhook-automation-service-security-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
+          include-hidden-files: false
+
+      - name: Remove verification-only resources
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          sudo rm -rf -- "$TRIVY_CACHE" "$GOPATH" "$RUNNER_TEMP/security-tools" \
+            "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE/evidence"
+          docker image rm -f "$TRIVY_IMAGE" >/dev/null 2>&1
+          docker builder prune --all --force >/dev/null 2>&1

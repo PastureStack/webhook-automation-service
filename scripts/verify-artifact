@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# PastureStack deterministic artifact verification.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+source "${repo_root}/scripts/version"
+version="${VERSION#v}"
+artifact="${repo_root}/dist/artifacts/webhook-automation-service-${version}-linux-${ARCH}.tar.xz"
+
+if [[ ! -f "${artifact}" ]]; then
+    "${repo_root}/scripts/package"
+fi
+
+work_root="$(mktemp -d)"
+cleanup()
+{
+    rm -rf "${work_root}"
+}
+trap cleanup EXIT
+
+expected_entries="$(cat <<'EOF'
+webhook-automation-service
+webhook-automation-service-COMPATIBILITY.md
+webhook-automation-service-LICENSES.txt
+webhook-automation-service-SOURCES.txt
+webhook-automation-service-THIRD-PARTY-NOTICES.md
+EOF
+)"
+actual_entries="$(tar -tJf "${artifact}" | sort)"
+test "${actual_entries}" = "${expected_entries}"
+tar -xJf "${artifact}" -C "${work_root}"
+test -x "${work_root}/webhook-automation-service"
+grep -F 'Apache License' "${work_root}/webhook-automation-service-LICENSES.txt" >/dev/null
+grep -F 'Redistribution and use in source and binary forms' \
+    "${work_root}/webhook-automation-service-LICENSES.txt" >/dev/null
+grep -F 'Latest relevant upstream boundary: 5d68737e9c5edafc70a4963ffca1466e0b95c708' \
+    "${work_root}/webhook-automation-service-SOURCES.txt" >/dev/null
+grep -F "Release source commit: ${COMMIT}" \
+    "${work_root}/webhook-automation-service-SOURCES.txt" >/dev/null
+test "$(sha256sum "${repo_root}/bin/webhook-automation-service" | cut -d' ' -f1)" = \
+     "$(sha256sum "${work_root}/webhook-automation-service" | cut -d' ' -f1)"
+"${work_root}/webhook-automation-service" --version | grep -F "${VERSION}"
+if ldd "${work_root}/webhook-automation-service" >/dev/null 2>&1; then
+    printf 'The executable is dynamically linked.\n' >&2
+    exit 1
+fi
+printf 'Verified %s\n' "$(basename "${artifact}")"

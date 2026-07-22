@@ -1,4 +1,4 @@
-./bin
-./.dapper
-./dist
-./.trash-cache
+.git
+bin
+dist
+.cache

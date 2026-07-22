@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PastureStack/webhook-automation-service/drivers"
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/Sirupsen/logrus"
 	"github.com/mitchellh/mapstructure"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/webhook-service/drivers"
-	"github.com/rancher/webhook-service/model"
 )
 
 func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {

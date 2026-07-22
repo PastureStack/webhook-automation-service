@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# PastureStack executable smoke test for the launcher contract.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+binary="${repo_root}/bin/webhook-automation-service"
+if [[ ! -x "${binary}" ]]; then
+    "${repo_root}/scripts/build"
+fi
+
+work_root="$(mktemp -d)"
+service_pid=''
+cleanup()
+{
+    if [[ -n "${service_pid}" ]]; then
+        kill "${service_pid}" 2>/dev/null || true
+        wait "${service_pid}" 2>/dev/null || true
+    fi
+    rm -rf "${work_root}"
+}
+trap cleanup EXIT
+
+openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "${work_root}/private-key.pem"
+openssl pkey -in "${work_root}/private-key.pem" -pubout \
+    -out "${work_root}/public-key.pem"
+
+listen_address="127.0.0.1:18117"
+PASTURESTACK_API_PUBLIC_KEY_FILE="${work_root}/public-key.pem" \
+PASTURESTACK_WEBHOOK_LISTEN_ADDRESS="${listen_address}" \
+RSA_PRIVATE_KEY_CONTENTS='must-not-be-read-or-logged' \
+    "${binary}" >"${work_root}/service.log" 2>&1 &
+service_pid=$!
+
+for _ in $(seq 1 100); do
+    if curl --silent --fail "http://${listen_address}/v1-webhooks?projectId=1a1" >"${work_root}/version.json"; then
+        break
+    fi
+    if ! kill -0 "${service_pid}" 2>/dev/null; then
+        cat "${work_root}/service.log" >&2
+        exit 1
+    fi
+    sleep 0.05
+done
+grep -F 'v1-webhooks' "${work_root}/version.json" >/dev/null
+
+status="$(curl --silent --output "${work_root}/invalid-token.json" --write-out '%{http_code}' \
+    -X POST "http://${listen_address}/v1-webhooks/endpoint?token=invalid")"
+test "${status}" = "400"
+grep -F 'invalid token' "${work_root}/invalid-token.json" >/dev/null
+if grep -F 'must-not-be-read-or-logged' "${work_root}/service.log" >/dev/null; then
+    printf 'Ignored private key content appeared in logs.\n' >&2
+    exit 1
+fi
+
+kill "${service_pid}"
+wait "${service_pid}" 2>/dev/null || true
+service_pid=''
+printf 'Executable integration test passed.\n'

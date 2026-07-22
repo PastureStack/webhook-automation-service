@@ -5,17 +5,24 @@ import (
 )
 
 type Config struct {
-	CattleURL       string
-	CattleAccessKey string
-	CattleSecretKey string
+	APIURL    string
+	AccessKey string
+	SecretKey string
 }
 
 func GetConfig() Config {
-	config := Config{
-		CattleURL:       os.Getenv("CATTLE_URL"),
-		CattleAccessKey: os.Getenv("CATTLE_ACCESS_KEY"),
-		CattleSecretKey: os.Getenv("CATTLE_SECRET_KEY"),
+	return Config{
+		APIURL:    firstEnvironmentValue("PASTURESTACK_API_URL", "CATTLE_URL"),
+		AccessKey: firstEnvironmentValue("PASTURESTACK_API_ACCESS_KEY", "CATTLE_ACCESS_KEY"),
+		SecretKey: firstEnvironmentValue("PASTURESTACK_API_SECRET_KEY", "CATTLE_SECRET_KEY"),
 	}
+}
 
-	return config
+func firstEnvironmentValue(names ...string) string {
+	for _, name := range names {
+		if value := os.Getenv(name); value != "" {
+			return value
+		}
+	}
+	return ""
 }

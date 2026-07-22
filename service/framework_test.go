@@ -2,6 +2,8 @@ package service
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,12 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PastureStack/webhook-automation-service/drivers"
+	"github.com/PastureStack/webhook-automation-service/model"
 	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/rancher/go-rancher/v2"
-	"github.com/rancher/rancher-auth-service/util"
-	"github.com/rancher/webhook-service/drivers"
-	"github.com/rancher/webhook-service/model"
 )
 
 var server *httptest.Server
@@ -65,17 +66,18 @@ func init() {
 	}
 	drivers.Drivers["forwardPost"] = &MockForwardPostDriver{expectedConfig: expectedForwardPostTemplate}
 
-	privateKey := util.ParsePrivateKey("../testutils/private.pem")
-	publicKey := util.ParsePublicKey("../testutils/public.pem")
+	testKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
 	r = &RouteHandler{
-		PrivateKey: privateKey,
-		PublicKey:  publicKey,
+		PublicKey: &testKey.PublicKey,
 	}
 
 	mockWebhook := &mockGenericObject{
 		created: map[string]*client.GenericObject{},
 	}
-	r.ClientFactory = &MockRancherClientFactory{
+	r.ClientFactory = &MockAPIClientFactory{
 		mw: mockWebhook,
 	}
 	router = NewRouter(r)
@@ -123,12 +125,12 @@ func TestMissingContentTypeHeader(t *testing.T) {
 	strings.Contains(respMessage, "application/json")
 }
 
-type MockRancherClientFactory struct {
+type MockAPIClientFactory struct {
 	mw *mockGenericObject
 }
 
-func (e *MockRancherClientFactory) GetClient(projectID string) (*client.RancherClient, error) {
-	logrus.Infof("RancherClientFactory GetClient")
+func (e *MockAPIClientFactory) GetClient(projectID string) (*client.RancherClient, error) {
+	logrus.Infof("APIClientFactory GetClient")
 
 	mockClient := &client.RancherClient{
 		GenericObject: e.mw,

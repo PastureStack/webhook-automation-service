@@ -1,12 +1,74 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# PastureStack deterministic flat GitHub Release asset.
+set -euo pipefail
 
-cd $(dirname $0)/..
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+source "${repo_root}/scripts/version"
 
-if [ ! -e bin/webhook-service ]; then
-    ./scripts/build
+if [[ "${ALLOW_DIRTY:-0}" != "1" ]] && [[ -n "$(git -c safe.directory="${repo_root}" -C "${repo_root}" status --porcelain --untracked-files=all)" ]]; then
+    printf 'Refusing to package a dirty source tree.\n' >&2
+    exit 1
 fi
 
-mkdir -p dist/artifacts
-cd bin/
-tar cvJf ../dist/artifacts/webhook-service.tar.xz .
+binary="${repo_root}/bin/webhook-automation-service"
+if [[ ! -x "${binary}" ]]; then
+    "${repo_root}/scripts/build"
+fi
+
+version="${VERSION#v}"
+artifact="webhook-automation-service-${version}-linux-${ARCH}.tar.xz"
+source_date_epoch="${SOURCE_DATE_EPOCH:-$(git -c safe.directory="${repo_root}" -C "${repo_root}" show -s --format=%ct HEAD)}"
+package_root="$(mktemp -d)"
+cleanup()
+{
+    rm -rf "${package_root}"
+}
+trap cleanup EXIT
+
+mkdir -p "${repo_root}/dist/artifacts"
+install -m 0755 "${binary}" "${package_root}/webhook-automation-service"
+install -m 0644 "${repo_root}/COMPATIBILITY.md" \
+    "${package_root}/webhook-automation-service-COMPATIBILITY.md"
+install -m 0644 "${repo_root}/THIRD-PARTY-NOTICES.md" \
+    "${package_root}/webhook-automation-service-THIRD-PARTY-NOTICES.md"
+
+cat >"${package_root}/webhook-automation-service-SOURCES.txt" <<EOF
+PastureStack source: https://github.com/PastureStack/webhook-automation-service
+Release source commit: ${COMMIT}
+Preserved upstream source: https://github.com/rancher/webhook-service
+Latest relevant upstream boundary: 5d68737e9c5edafc70a4963ffca1466e0b95c708 (v0.9.15)
+Build toolchain: Go 1.26.5
+Dependency source: the exact vendored source in the release commit
+EOF
+printf '\n' >>"${package_root}/webhook-automation-service-SOURCES.txt"
+cat "${repo_root}/ORIGIN.md" >>"${package_root}/webhook-automation-service-SOURCES.txt"
+
+licenses="${package_root}/webhook-automation-service-LICENSES.txt"
+: >"${licenses}"
+printf '===== Webhook Automation Service — Apache-2.0 =====\n\n' >>"${licenses}"
+cat "${repo_root}/LICENSE" >>"${licenses}"
+while IFS= read -r legal_file; do
+    printf '\n\n===== %s =====\n\n' "${legal_file#${repo_root}/}" >>"${licenses}"
+    cat "${legal_file}" >>"${licenses}"
+done < <(find "${repo_root}/vendor" -type f \
+    \( -iname 'LICENSE' -o -iname 'COPYING' -o -iname 'NOTICE' -o -iname 'AUTHORS' \) | sort)
+printf '\n\n===== Go standard library — BSD 3-Clause =====\n\n' >>"${licenses}"
+cat "$(GO111MODULE=off GOTOOLCHAIN=local go env GOROOT)/LICENSE" >>"${licenses}"
+printf '\n' >>"${licenses}"
+
+rm -f "${repo_root}/dist/artifacts/${artifact}"
+XZ_OPT=-9e tar \
+    --sort=name \
+    --mtime="@${source_date_epoch}" \
+    --owner=0 \
+    --group=0 \
+    --numeric-owner \
+    -C "${package_root}" \
+    -cJf "${repo_root}/dist/artifacts/${artifact}" \
+    webhook-automation-service \
+    webhook-automation-service-COMPATIBILITY.md \
+    webhook-automation-service-LICENSES.txt \
+    webhook-automation-service-SOURCES.txt \
+    webhook-automation-service-THIRD-PARTY-NOTICES.md
+
+sha256sum "${repo_root}/dist/artifacts/${artifact}"
