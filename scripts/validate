@@ -44,7 +44,7 @@ for legal_file in \
 done
 
 grep -F 'github.com/go-viper/mapstructure/v2 v2.5.0' vendor/modules.txt >/dev/null
-grep -F 'github.com/sirupsen/logrus v1.10.1' vendor/modules.txt >/dev/null
+grep -F 'github.com/sirupsen/logrus v1.10.2' vendor/modules.txt >/dev/null
 grep -F 'github.com/urfave/cli/v3 v3.11.0' vendor/modules.txt >/dev/null
 grep -F 'golang.org/x/sys v0.47.0' vendor/modules.txt >/dev/null
 if grep -R -n -E 'GO111MODULE=off|github.com/Sirupsen/logrus|github.com/mitchellh/mapstructure|github.com/urfave/cli"|gopkg.in/check.v1' \
