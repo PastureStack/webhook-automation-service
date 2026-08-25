@@ -12,7 +12,7 @@ github.com/gorilla/mux
 ## explicit; go 1.12
 github.com/gorilla/websocket
 # github.com/rancher/go-rancher v0.1.1-0.20190109212254-cbc1b0a3f68d => ./third_party/go-rancher
-## explicit; go 1.27.0
+## explicit; go 1.26.0
 github.com/rancher/go-rancher/api
 github.com/rancher/go-rancher/client
 github.com/rancher/go-rancher/v2
