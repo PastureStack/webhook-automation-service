@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 root = Path(os.environ["PASTURESTACK_CONTENT_POLICY_ROOT"])
-excluded_roots = {".git", "bin", "dist", "vendor"}
+excluded_roots = {".git", "bin", "dist", "third_party", "vendor"}
 old_service_name = "webhook-service"
 old_service_allowed = {
     "COMPATIBILITY.md",

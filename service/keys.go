@@ -8,14 +8,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
 const maximumPublicKeyBytes = 64 << 10
 
 // GetPublicKey loads the only key material required by the service. The
 // control-plane private key is deliberately neither read nor retained.
-func GetPublicKey(c *cli.Context) (*rsa.PublicKey, error) {
+func GetPublicKey(c *cli.Command) (*rsa.PublicKey, error) {
 	keyFile := c.String("public-key-file")
 	keyContents := c.String("public-key-contents")
 	if keyFile != "" && keyContents != "" {

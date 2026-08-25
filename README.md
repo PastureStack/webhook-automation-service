@@ -18,13 +18,11 @@ Security changes include strict RS256 verification without the retired JWT depen
 
 ## Build and test
 
-The source uses its exact vendored dependency tree in GOPATH mode. On Linux with Go 1.26, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
+The source uses Go Modules and a checked-in vendor tree for reproducible builds. On Linux with Go 1.27, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
 
 ```sh
-mkdir -p "${GOPATH}/src/github.com/PastureStack"
-git clone https://github.com/PastureStack/webhook-automation-service.git \
-  "${GOPATH}/src/github.com/PastureStack/webhook-automation-service"
-cd "${GOPATH}/src/github.com/PastureStack/webhook-automation-service"
+git clone https://github.com/PastureStack/webhook-automation-service.git
+cd webhook-automation-service
 make validate
 make test
 make build

@@ -13,10 +13,9 @@ import (
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/Sirupsen/logrus"
-	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/api"
 	"github.com/rancher/go-rancher/v2"
+	"github.com/sirupsen/logrus"
 )
 
 const maximumConfigurationBodyBytes = 1 << 20
@@ -45,7 +44,7 @@ func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.Unmarshal(requestBytes, &wh); err != nil {
-		return 400, errors.Wrap(err, "Bad request body")
+		return 400, fmt.Errorf("bad request body: %w", err)
 	}
 
 	if wh.Name == "" {
@@ -99,7 +98,7 @@ func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request)
 	whResponse, err := newWebhook(apiContext, url, webhook.Id, wh.Driver, wh.Name, driverConfig, driver,
 		webhook.State, r)
 	if err != nil {
-		return 500, errors.Wrap(err, "Unable to create webhook response")
+		return 500, fmt.Errorf("create webhook response: %w", err)
 	}
 	apiContext.WriteResource(whResponse)
 	return 200, nil

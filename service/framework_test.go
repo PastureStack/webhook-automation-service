@@ -13,9 +13,9 @@ import (
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/rancher/go-rancher/v2"
+	"github.com/sirupsen/logrus"
 )
 
 var server *httptest.Server

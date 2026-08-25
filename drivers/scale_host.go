@@ -13,11 +13,10 @@ import (
 
 	runtimeconfig "github.com/PastureStack/webhook-automation-service/config"
 	"github.com/PastureStack/webhook-automation-service/model"
-	log "github.com/Sirupsen/logrus"
-	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
+	log "github.com/sirupsen/logrus"
 )
 
 var re = regexp.MustCompile("[0-9]+$")
@@ -87,7 +86,7 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 	config := &model.ScaleHost{}
 	err := mapstructure.Decode(conf, config)
 	if err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Couldn't unmarshal config")
+		return http.StatusInternalServerError, fmt.Errorf("couldn't unmarshal config: %w", err)
 	}
 
 	action := config.Action

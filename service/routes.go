@@ -6,10 +6,10 @@ import (
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/rancher/go-rancher/api"
 	v1client "github.com/rancher/go-rancher/client"
+	"github.com/sirupsen/logrus"
 )
 
 var schemas *v1client.Schemas

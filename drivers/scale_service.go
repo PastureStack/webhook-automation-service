@@ -5,8 +5,7 @@ import (
 	"net/http"
 
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
 )
@@ -50,7 +49,7 @@ func (s *ScaleServiceDriver) ValidatePayload(conf interface{}, apiClient *client
 
 	service, err := apiClient.Service.ById(config.ServiceID)
 	if err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Error in getService")
+		return http.StatusInternalServerError, fmt.Errorf("get service: %w", err)
 	}
 
 	if service == nil || service.Removed != "" {
@@ -81,7 +80,7 @@ func (s *ScaleServiceDriver) Execute(conf interface{}, apiClient *client.Rancher
 	config := &model.ScaleService{}
 	err := mapstructure.Decode(conf, config)
 	if err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Couldn't unmarshal config")
+		return http.StatusInternalServerError, fmt.Errorf("couldn't unmarshal config: %w", err)
 	}
 	var newScale int64
 	serviceID := config.ServiceID
@@ -92,7 +91,7 @@ func (s *ScaleServiceDriver) Execute(conf interface{}, apiClient *client.Rancher
 
 	service, err := apiClient.Service.ById(serviceID)
 	if err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Error in getService")
+		return http.StatusInternalServerError, fmt.Errorf("get service: %w", err)
 	}
 
 	if service == nil || service.Removed != "" {
@@ -122,7 +121,7 @@ func (s *ScaleServiceDriver) Execute(conf interface{}, apiClient *client.Rancher
 		if apiError, ok := err.(*client.ApiError); ok && apiError.StatusCode >= 400 {
 			statusCode = apiError.StatusCode
 		}
-		return statusCode, errors.Wrap(err, "Error in updateService")
+		return statusCode, fmt.Errorf("update service: %w", err)
 	}
 	return http.StatusOK, nil
 }

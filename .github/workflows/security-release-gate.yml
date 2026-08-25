@@ -20,15 +20,14 @@ jobs:
     timeout-minutes: 90
     env:
       CANDIDATE_VERSION: 0.10.1
-      GO_VERSION: 1.26.5
-      GO_LINUX_AMD64_SHA256: 5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053
-      TRIVY_IMAGE: aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c
+      GO_VERSION: 1.27.0
+      GO_LINUX_AMD64_SHA256: 675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+      TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
       TRIVY_CACHE: /tmp/pasturestack-webhook-automation-service-trivy-cache
-      GO111MODULE: 'off'
       GOTOOLCHAIN: local
     steps:
       - name: Check out the complete reviewed history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -51,9 +50,9 @@ jobs:
           mkdir -p evidence
           printf '%s\n' "$GITHUB_SHA" > evidence/source-revision.txt
           git ls-tree -r --name-only HEAD | LC_ALL=C sort > evidence/source-tree.txt
-          sha256sum vendor.lock > evidence/vendor-lock.sha256
+          sha256sum go.mod go.sum vendor/modules.txt > evidence/dependency-lock.sha256
 
-      - name: Install verified Go toolchain and create the GOPATH view
+      - name: Install verified Go toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -64,17 +63,13 @@ jobs:
           sudo rm -rf /usr/local/go
           sudo tar -C /usr/local -xzf "/tmp/${archive}"
           printf '/usr/local/go/bin\n' >> "$GITHUB_PATH"
-          candidate_gopath="$RUNNER_TEMP/webhook-automation-service-gopath"
-          printf 'GOPATH=%s\n' "$candidate_gopath" >> "$GITHUB_ENV"
-          mkdir -p "$candidate_gopath/src/github.com/PastureStack"
-          ln -s "$GITHUB_WORKSPACE" "$candidate_gopath/src/github.com/PastureStack/webhook-automation-service"
           /usr/local/go/bin/go version | grep -Fx "go version go${GO_VERSION} linux/amd64"
 
       - name: Validate, test, integrate, and build reproducibly
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           export PATH="/usr/local/go/bin:$PATH"
           make validate
           make test
@@ -93,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           export PATH="/usr/local/go/bin:$PATH"
           make package
           make verify-artifact
@@ -109,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           export PATH="/usr/local/go/bin:$PATH"
           tool_dir="$RUNNER_TEMP/security-tools"
           mkdir -p "$tool_dir"
@@ -130,7 +125,7 @@ jobs:
           docker pull "$TRIVY_IMAGE"
           docker image inspect "$TRIVY_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
             grep -Fq 'aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c'
-          test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.73.0'
+          test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.74.0'
           source_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-source.XXXXXX")
           artifact_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-artifact.XXXXXX")
           git archive HEAD | tar -x -C "$source_tree"
@@ -171,7 +166,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           : > evidence/security-summary.txt
           for scope in source artifact; do
             report="evidence/${scope}-security.json"
@@ -191,13 +186,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           find evidence -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z |
             xargs -0 sha256sum > evidence/SHA256SUMS
 
       - name: Upload short-lived verification evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: webhook-automation-service-security-${{ github.sha }}
           path: evidence/
@@ -211,7 +206,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          sudo rm -rf -- "$TRIVY_CACHE" "$GOPATH" "$RUNNER_TEMP/security-tools" \
+          sudo rm -rf -- "$TRIVY_CACHE" "$RUNNER_TEMP/security-tools" \
             "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE/evidence"
           docker image rm -f "$TRIVY_IMAGE" >/dev/null 2>&1
           docker builder prune --all --force >/dev/null 2>&1

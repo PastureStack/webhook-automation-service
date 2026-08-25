@@ -12,10 +12,10 @@ import (
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/Sirupsen/logrus"
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
+	"github.com/sirupsen/logrus"
 )
 
 func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {

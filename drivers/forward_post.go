@@ -13,8 +13,7 @@ import (
 	"github.com/PastureStack/webhook-automation-service/config"
 	"github.com/PastureStack/webhook-automation-service/internal/originhttp"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
 )
@@ -47,7 +46,7 @@ func (s *ForwardPostDriver) Execute(conf interface{}, apiClient *client.RancherC
 
 	forwardConfig := &model.ForwardPost{}
 	if err = mapstructure.Decode(conf, forwardConfig); err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "couldn't unmarshal config")
+		return http.StatusInternalServerError, fmt.Errorf("couldn't unmarshal config: %w", err)
 	}
 	if err := validateForwardConfig(forwardConfig); err != nil {
 		return http.StatusBadRequest, err

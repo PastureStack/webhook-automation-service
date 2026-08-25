@@ -4,128 +4,135 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
-	. "gopkg.in/check.v1"
+	"github.com/sirupsen/logrus"
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
 )
 
-// Hook up gocheck into the "go test" runner.
-func Test(t *testing.T) { TestingT(t) }
+func requireEqual[T comparable](t *testing.T, field string, actual, expected T) {
+	t.Helper()
+	if actual != expected {
+		t.Fatalf("%s: got %v, want %v", field, actual, expected)
+	}
+}
 
-type MySuite struct{}
+func requireNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
-var _ = Suite(&MySuite{})
+func requireWebhook(t *testing.T, webhook *model.Webhook) {
+	t.Helper()
+	requireEqual(t, "name", webhook.Name, "wh-name")
+	requireEqual(t, "driver", webhook.Driver, "forwardPost")
+	requireEqual(t, "id", webhook.Id, "1")
+	if webhook.URL == "" {
+		t.Fatal("webhook URL is empty")
+	}
+	requireEqual(t, "project ID", webhook.ForwardPostConfig.ProjectID, "1a5")
+	requireEqual(t, "service name", webhook.ForwardPostConfig.ServiceName, "pipeline-server")
+	requireEqual(t, "port", webhook.ForwardPostConfig.Port, "60080")
+	requireEqual(t, "path", webhook.ForwardPostConfig.Path, "/v1")
+}
 
-func (s *MySuite) TestCreateAndUpgdateAndExcuteAndListAndDelete(c *C) {
+func requireSelfLink(t *testing.T, self string) {
+	t.Helper()
+	if !strings.HasSuffix(self, "/v1-webhooks/receivers/1?projectId=1a1") {
+		t.Fatalf("unexpected self URL: %s", self)
+	}
+}
+
+func TestCreateUpdateExecuteListAndDelete(t *testing.T) {
 	// Test creating a webhook
 	constructURL := fmt.Sprintf("%s/v1-webhooks/receivers?projectId=1a1", server.URL)
 	jsonStr := []byte(`{"driver":"forwardPost","name":"wh-name",
 		"forwardPostConfig": {"projectId": "1a5","serviceName": "pipeline-server", "port": "60080", "path": "/v1"}}`)
 	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
-	c.Assert(err, IsNil)
+	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	handler := HandleError(schemas, r.ConstructPayload)
 	handler.ServeHTTP(response, request)
-	c.Assert(response.Code, Equals, 200)
+	requireEqual(t, "create status", response.Code, http.StatusOK)
 
-	resp, err := ioutil.ReadAll(response.Body)
-	c.Assert(err, IsNil)
+	resp, err := io.ReadAll(response.Body)
+	requireNoError(t, err)
 
 	wh := &model.Webhook{}
 	err = json.Unmarshal(resp, wh)
-	c.Assert(err, IsNil)
-	c.Assert(wh.Name, Equals, "wh-name")
-	c.Assert(wh.Driver, Equals, "forwardPost")
-	c.Assert(wh.Id, Equals, "1")
-	c.Assert(wh.URL, Not(Equals), "")
-	c.Assert(wh.ForwardPostConfig.ProjectID, Equals, "1a5")
-	c.Assert(wh.ForwardPostConfig.ServiceName, Equals, "pipeline-server")
-	c.Assert(wh.ForwardPostConfig.Port, Equals, "60080")
-	c.Assert(wh.ForwardPostConfig.Path, Equals, "/v1")
-	c.Assert(wh.Links["self"], Matches, "*\\/v1-webhooks\\/receivers\\/1\\?projectId=1a1", Commentf("Bad self URL: %v", wh.Links["self"]))
+	requireNoError(t, err)
+	requireWebhook(t, wh)
+	requireSelfLink(t, wh.Links["self"])
 
 	// Test getting the created webhook by id
 	byID := fmt.Sprintf("%s/v1-webhooks/receivers/1?projectId=1a1", server.URL)
 	request, err = http.NewRequest("GET", byID, nil)
-	c.Assert(err, IsNil)
+	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	c.Assert(response.Code, Equals, 200, Commentf("StatusCode %d means get failed", response.Code))
+	requireEqual(t, "get status", response.Code, http.StatusOK)
 
-	resp, err = ioutil.ReadAll(response.Body)
-	c.Assert(err, IsNil)
+	resp, err = io.ReadAll(response.Body)
+	requireNoError(t, err)
 
 	wh = &model.Webhook{}
 	err = json.Unmarshal(resp, wh)
-	c.Assert(err, IsNil)
-	c.Assert(wh.Name, Equals, "wh-name")
-	c.Assert(wh.Driver, Equals, "forwardPost")
-	c.Assert(wh.Id, Equals, "1")
-	c.Assert(wh.URL, Not(Equals), "")
-	c.Assert(wh.ForwardPostConfig.ProjectID, Equals, "1a5")
-	c.Assert(wh.ForwardPostConfig.ServiceName, Equals, "pipeline-server")
-	c.Assert(wh.ForwardPostConfig.Port, Equals, "60080")
-	c.Assert(wh.ForwardPostConfig.Path, Equals, "/v1")
+	requireNoError(t, err)
+	requireWebhook(t, wh)
 
 	// Test executing the webhook
 	url := wh.URL
 	requestExecute, err := http.NewRequest("POST", url, nil)
-	c.Assert(err, IsNil)
+	requireNoError(t, err)
 	response = httptest.NewRecorder()
 	handler = HandleError(schemas, r.Execute)
 	handler.ServeHTTP(response, requestExecute)
-	c.Assert(response.Code, Equals, 200, Commentf("StatusCode %d means get failed", response.Code))
+	requireEqual(t, "execute status", response.Code, http.StatusOK)
 
 	//List webhooks
 	requestList, err := http.NewRequest("GET", constructURL, nil)
-	c.Assert(err, IsNil)
+	requireNoError(t, err)
 
 	requestList.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, requestList)
-	c.Assert(response.Code, Equals, 200, Commentf("StatusCode %d means get failed", response.Code))
+	requireEqual(t, "list status", response.Code, http.StatusOK)
 
-	resp, err = ioutil.ReadAll(response.Body)
-	c.Assert(err, IsNil)
+	resp, err = io.ReadAll(response.Body)
+	requireNoError(t, err)
 
 	whCollection := &model.WebhookCollection{}
 	err = json.Unmarshal(resp, whCollection)
-	c.Assert(err, IsNil)
-	c.Assert(whCollection.Data, HasLen, 1, Commentf("Added webhook not listed"))
+	requireNoError(t, err)
+	requireEqual(t, "webhook count", len(whCollection.Data), 1)
 
 	wh = &whCollection.Data[0]
-	c.Assert(wh.Name, Equals, "wh-name")
-	c.Assert(wh.Driver, Equals, "forwardPost")
-	c.Assert(wh.Id, Equals, "1")
-	c.Assert(wh.URL, Not(Equals), "")
-	c.Assert(wh.ForwardPostConfig.ProjectID, Equals, "1a5")
-	c.Assert(wh.ForwardPostConfig.ServiceName, Equals, "pipeline-server")
-	c.Assert(wh.ForwardPostConfig.Port, Equals, "60080")
-	c.Assert(wh.ForwardPostConfig.Path, Equals, "/v1")
-	c.Assert(wh.Links["self"], Matches, "*\\/v1-webhooks\\/receivers\\/1\\?projectId=1a1", Commentf("Bad self URL: %v", wh.Links["self"]))
+	requireWebhook(t, wh)
+	requireSelfLink(t, wh.Links["self"])
 
 	//Delete
 	request, err = http.NewRequest("DELETE", byID, nil)
-	c.Assert(err, IsNil)
+	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	c.Assert(response.Code, Equals, 204, Commentf("StatusCode %d means delete failed", response.Code))
+	requireEqual(t, "delete status", response.Code, http.StatusNoContent)
 }
 
 type MockForwardPostDriver struct {

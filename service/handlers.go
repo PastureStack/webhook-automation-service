@@ -6,12 +6,11 @@ import (
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
-	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
-	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/api"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -113,7 +112,7 @@ func (rh *RouteHandler) GetWebhook(w http.ResponseWriter, r *http.Request) (int,
 	respWebhook, err := newWebhook(apiContext, webhook.URL, webhook.ID, webhook.Driver, webhook.Name,
 		webhook.Config, driver, webhook.State, r)
 	if err != nil {
-		return 500, errors.Wrap(err, "Unable to create webhook response")
+		return 500, fmt.Errorf("create webhook response: %w", err)
 	}
 	// we will hide the url to prevent readonly and restricted users to access endpoint
 	if readonlyRoles[getRoles(r)] {

@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"github.com/PastureStack/webhook-automation-service/model"
-	log "github.com/Sirupsen/logrus"
-	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
+	"github.com/go-viper/mapstructure/v2"
 	v1client "github.com/rancher/go-rancher/client"
 	"github.com/rancher/go-rancher/v2"
+	log "github.com/sirupsen/logrus"
 )
 
 var regTag = regexp.MustCompile(`^[\w]+[\w.-]*`)
@@ -68,7 +67,7 @@ func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.Ranch
 
 	config := &model.ServiceUpgrade{}
 	if err := mapstructure.Decode(conf, config); err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "Couldn't unmarshal config")
+		return http.StatusInternalServerError, fmt.Errorf("couldn't unmarshal config: %w", err)
 	}
 
 	requestedTag := config.Tag

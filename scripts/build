@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# PastureStack static, deterministic Go 1.26 build.
+# PastureStack static, deterministic Go 1.27 build.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 source "${repo_root}/scripts/version"
 
-go_version="$(GO111MODULE=off GOTOOLCHAIN=local go env GOVERSION)"
-if [[ ! "${go_version}" =~ ^go1\.26([.]|$) ]]; then
-    printf 'Go 1.26 is required; found %s\n' "${go_version}" >&2
+go_version="$(GOTOOLCHAIN=local go env GOVERSION)"
+if [[ ! "${go_version}" =~ ^go1\.27([.]|$) ]]; then
+    printf 'Go 1.27 is required; found %s\n' "${go_version}" >&2
     exit 1
 fi
 
 mkdir -p "${repo_root}/bin"
 (
     cd "${repo_root}"
-    GO111MODULE=off GOTOOLCHAIN=local CGO_ENABLED=0 go build \
+    GOTOOLCHAIN=local CGO_ENABLED=0 go build -mod=vendor \
         -trimpath \
         -buildvcs=false \
         -tags "netgo osusergo" \

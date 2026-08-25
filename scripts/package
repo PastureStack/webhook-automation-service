@@ -37,8 +37,8 @@ PastureStack source: https://github.com/PastureStack/webhook-automation-service
 Release source commit: ${COMMIT}
 Preserved upstream source: https://github.com/rancher/webhook-service
 Latest relevant upstream boundary: 5d68737e9c5edafc70a4963ffca1466e0b95c708 (v0.9.15)
-Build toolchain: Go 1.26.5
-Dependency source: the exact vendored source in the release commit
+Build toolchain: Go 1.27.0
+Dependency source: go.mod, go.sum, vendor/modules.txt, and the reviewed local go-rancher compatibility module
 EOF
 printf '\n' >>"${package_root}/webhook-automation-service-SOURCES.txt"
 cat "${repo_root}/ORIGIN.md" >>"${package_root}/webhook-automation-service-SOURCES.txt"
@@ -53,7 +53,7 @@ while IFS= read -r legal_file; do
 done < <(find "${repo_root}/vendor" -type f \
     \( -iname 'LICENSE' -o -iname 'COPYING' -o -iname 'NOTICE' -o -iname 'AUTHORS' \) | sort)
 printf '\n\n===== Go standard library — BSD 3-Clause =====\n\n' >>"${licenses}"
-cat "$(GO111MODULE=off GOTOOLCHAIN=local go env GOROOT)/LICENSE" >>"${licenses}"
+cat "$(GOTOOLCHAIN=local go env GOROOT)/LICENSE" >>"${licenses}"
 printf '\n' >>"${licenses}"
 
 rm -f "${repo_root}/dist/artifacts/${artifact}"
