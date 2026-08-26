@@ -158,7 +158,7 @@ func setupRancherBaseClient(rancherClient *RancherBaseClientImpl, opts *ClientOp
 		opts.Timeout = time.Second * time.Duration(defaultTimeout())
 	}
 	client := &http.Client{Timeout: opts.Timeout}
-	req, err := http.NewRequest("GET", opts.Url, nil)
+	req, err := newRancherRequest(opts.Url, "GET", opts.Url, nil)
 	if err != nil {
 		return err
 	}
@@ -182,11 +182,11 @@ func setupRancherBaseClient(rancherClient *RancherBaseClientImpl, opts *ClientOp
 	}
 
 	if schemasUrls != opts.Url {
-		req, err = http.NewRequest("GET", schemasUrls, nil)
-		req.SetBasicAuth(opts.AccessKey, opts.SecretKey)
+		req, err = newRancherRequest(opts.Url, "GET", schemasUrls, nil)
 		if err != nil {
 			return err
 		}
+		req.SetBasicAuth(opts.AccessKey, opts.SecretKey)
 
 		resp, err = client.Do(req)
 		if err != nil {
@@ -240,7 +240,7 @@ func (rancherClient *RancherBaseClientImpl) newHttpClient() *http.Client {
 
 func (rancherClient *RancherBaseClientImpl) doDelete(url string) error {
 	client := rancherClient.newHttpClient()
-	req, err := http.NewRequest("DELETE", url, nil)
+	req, err := newRancherRequest(rancherClient.Opts.Url, "DELETE", url, nil)
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,14 @@ func (rancherClient *RancherBaseClientImpl) Websocket(url string, headers map[st
 		httpHeaders.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s)))
 	}
 
-	return dialer.Dial(url, http.Header(httpHeaders))
+	target, err := validateRancherRequestURL(rancherClient.Opts.Url, url, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !rancherWebSocketURLPattern.MatchString(target) {
+		return nil, nil, fmt.Errorf("Rancher WebSocket URL failed validation")
+	}
+	return dialer.Dial(target, http.Header(httpHeaders))
 }
 
 func (rancherClient *RancherBaseClientImpl) doGet(url string, opts *ListOpts, respObject interface{}) error {
@@ -286,11 +293,11 @@ func (rancherClient *RancherBaseClientImpl) doGet(url string, opts *ListOpts, re
 	}
 
 	if debug {
-		fmt.Println("GET " + url)
+		fmt.Println("GET " + safeRancherURLForLog(url))
 	}
 
 	client := rancherClient.newHttpClient()
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := newRancherRequest(rancherClient.Opts.Url, "GET", url, nil)
 	if err != nil {
 		return err
 	}
@@ -314,7 +321,7 @@ func (rancherClient *RancherBaseClientImpl) doGet(url string, opts *ListOpts, re
 	}
 
 	if debug {
-		fmt.Println("Response <= " + string(byteContent))
+		fmt.Printf("Response <= %d bytes\n", len(byteContent))
 	}
 
 	if err := json.Unmarshal(byteContent, respObject); err != nil {
@@ -370,12 +377,11 @@ func (rancherClient *RancherBaseClientImpl) doModify(method string, url string, 
 	}
 
 	if debug {
-		fmt.Println(method + " " + url)
-		fmt.Println("Request => " + string(bodyContent))
+		fmt.Printf("%s %s request=%d bytes\n", method, safeRancherURLForLog(url), len(bodyContent))
 	}
 
 	client := rancherClient.newHttpClient()
-	req, err := http.NewRequest(method, url, bytes.NewBuffer(bodyContent))
+	req, err := newRancherRequest(rancherClient.Opts.Url, method, url, bytes.NewBuffer(bodyContent))
 	if err != nil {
 		return err
 	}
@@ -401,7 +407,7 @@ func (rancherClient *RancherBaseClientImpl) doModify(method string, url string, 
 
 	if len(byteContent) > 0 {
 		if debug {
-			fmt.Println("Response <= " + string(byteContent))
+			fmt.Printf("Response <= %d bytes\n", len(byteContent))
 		}
 		return json.Unmarshal(byteContent, respObject)
 	}
@@ -569,7 +575,7 @@ func (rancherClient *RancherBaseClientImpl) doAction(schemaType string, action s
 	}
 
 	client := rancherClient.newHttpClient()
-	req, err := http.NewRequest("POST", actionUrl, input)
+	req, err := newRancherRequest(rancherClient.Opts.Url, "POST", actionUrl, input)
 	if err != nil {
 		return err
 	}
@@ -595,7 +601,7 @@ func (rancherClient *RancherBaseClientImpl) doAction(schemaType string, action s
 	}
 
 	if debug {
-		fmt.Println("Response <= " + string(byteContent))
+		fmt.Printf("Response <= %d bytes\n", len(byteContent))
 	}
 
 	return json.Unmarshal(byteContent, respObject)
