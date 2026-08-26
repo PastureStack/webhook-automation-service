@@ -153,7 +153,7 @@ func (s *ServiceUpgradeDriver) Execute(conf interface{}, apiClient *client.Ranch
 		return http.StatusOK, nil
 	}
 
-	log.Infof("Image %s pushed in Docker Hub, upgrading services with serviceSelector %v", pushedImage, config.ServiceSelector)
+	log.Info("Matching image push received; upgrading the selected services")
 
 	go upgradeServices(apiClient, config, pushedImage)
 

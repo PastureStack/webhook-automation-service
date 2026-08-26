@@ -80,7 +80,7 @@ func (rh *RouteHandler) GetWebhook(w http.ResponseWriter, r *http.Request) (int,
 	apiContext := api.GetApiContext(r)
 	vars := mux.Vars(r)
 	webhookID := vars["id"]
-	logrus.Infof("Getting webhook %v", webhookID)
+	logrus.Info("Getting the requested webhook")
 
 	projectID, errCode, err := getProjectID(r)
 	if err != nil {

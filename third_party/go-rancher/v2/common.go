@@ -293,7 +293,7 @@ func (rancherClient *RancherBaseClientImpl) doGet(url string, opts *ListOpts, re
 	}
 
 	if debug {
-		fmt.Println("GET " + safeRancherURLForLog(url))
+		fmt.Println("GET Rancher API request")
 	}
 
 	client := rancherClient.newHttpClient()
@@ -377,7 +377,7 @@ func (rancherClient *RancherBaseClientImpl) doModify(method string, url string, 
 	}
 
 	if debug {
-		fmt.Printf("%s %s request=%d bytes\n", method, safeRancherURLForLog(url), len(bodyContent))
+		fmt.Printf("Rancher API modification request=%d bytes\n", len(bodyContent))
 	}
 
 	client := rancherClient.newHttpClient()
