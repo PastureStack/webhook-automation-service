@@ -19,7 +19,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var re = regexp.MustCompile("[0-9]+$")
+var (
+	re                     = regexp.MustCompile("[0-9]+$")
+	resourceIDPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	outboundHTTPURLPattern = regexp.MustCompile(`^https?://(?:\[[0-9A-Fa-f:.%]+\]|[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$`)
+)
 
 type ScaleHostDriver struct {
 }
@@ -174,9 +178,12 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 		}
 
 		// Use raw call to get host so as to get additional driver config
+		if !resourceIDPattern.MatchString(host.AccountId) || !resourceIDPattern.MatchString(host.Id) {
+			return http.StatusBadRequest, fmt.Errorf("host identity has an unsupported format")
+		}
 		getURL := cattleURL + "/projects/" + host.AccountId + "/hosts/" + host.Id
 		log.Infof("Getting config for host %s as base host for cloning", host.Id)
-		hostRaw, err := getHosts(getURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
+		hostRaw, err := getHosts(cattleURL, getURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
@@ -223,7 +230,7 @@ func (s *ScaleHostDriver) Execute(conf interface{}, apiClient *client.RancherCli
 			hostRaw["hostname"] = name
 
 			log.Infof("Creating host with hostname: %s", name)
-			code, err := createHost(hostRaw, hostCreateURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
+			code, err := createHost(cattleURL, hostRaw, hostCreateURL, httpClient, apiConfig.AccessKey, apiConfig.SecretKey)
 			if err != nil {
 				return code, err
 			}
@@ -352,9 +359,16 @@ func (s *ScaleHostDriver) CustomizeSchema(schema *v1client.Schema) *v1client.Sch
 	return schema
 }
 
-func getHosts(hostURL string, httpClient *http.Client, accessKey string, secretKey string) (map[string]interface{}, error) {
+func getHosts(baseURL string, hostURL string, httpClient *http.Client, accessKey string, secretKey string) (map[string]interface{}, error) {
 	hostsResp := make(map[string]interface{})
-	request, err := http.NewRequest("GET", hostURL, nil)
+	target, err := validateScaleHostURL(baseURL, hostURL)
+	if err != nil {
+		return nil, err
+	}
+	if !outboundHTTPURLPattern.MatchString(target) {
+		return nil, fmt.Errorf("host request URL failed validation")
+	}
+	request, err := http.NewRequest("GET", target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Error creating request to get host: %v", err)
 	}
@@ -384,13 +398,20 @@ func getHosts(hostURL string, httpClient *http.Client, accessKey string, secretK
 	return hostsResp, nil
 }
 
-func createHost(host map[string]interface{}, hostCreateURL string, httpClient *http.Client, accessKey string, secretKey string) (int, error) {
+func createHost(baseURL string, host map[string]interface{}, hostCreateURL string, httpClient *http.Client, accessKey string, secretKey string) (int, error) {
 	hostJSON, err := json.Marshal(host)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("Error in JSON marshal of host: %v", err)
 	}
 
-	request, err := http.NewRequest("POST", hostCreateURL, bytes.NewBuffer(hostJSON))
+	target, err := validateScaleHostURL(baseURL, hostCreateURL)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if !outboundHTTPURLPattern.MatchString(target) {
+		return http.StatusInternalServerError, fmt.Errorf("host create URL failed validation")
+	}
+	request, err := http.NewRequest("POST", target, bytes.NewBuffer(hostJSON))
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("Error creating request to create host: %v", err)
 	}
@@ -409,6 +430,24 @@ func createHost(host map[string]interface{}, hostCreateURL string, httpClient *h
 	}
 
 	return http.StatusOK, nil
+}
+
+func validateScaleHostURL(baseURL string, candidateURL string) (string, error) {
+	if !outboundHTTPURLPattern.MatchString(candidateURL) {
+		return "", fmt.Errorf("host request URL has an unsupported format")
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Opaque != "" || base.User != nil || base.Hostname() == "" {
+		return "", fmt.Errorf("control-plane API URL is invalid")
+	}
+	target, err := url.Parse(candidateURL)
+	if err != nil || target.Opaque != "" || target.User != nil || target.Hostname() == "" {
+		return "", fmt.Errorf("host request URL is invalid")
+	}
+	if !strings.EqualFold(base.Scheme, target.Scheme) || !strings.EqualFold(base.Host, target.Host) {
+		return "", fmt.Errorf("host request URL crosses the configured control-plane origin")
+	}
+	return target.String(), nil
 }
 
 func deleteHost(hostID string, apiClient *client.RancherClient) (int, error) {
