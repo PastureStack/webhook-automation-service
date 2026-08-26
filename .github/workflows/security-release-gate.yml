@@ -124,7 +124,7 @@ jobs:
           mkdir -p "$TRIVY_CACHE"
           docker pull "$TRIVY_IMAGE"
           docker image inspect "$TRIVY_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
-            grep -Fq 'aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c'
+            grep -Fq 'aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969'
           test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.74.0'
           source_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-source.XXXXXX")
           artifact_tree=$(mktemp -d "${RUNNER_TEMP}/webhook-artifact.XXXXXX")
