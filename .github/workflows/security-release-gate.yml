@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GOPATH/src/github.com/PastureStack/webhook-automation-service"
+          cd "$GITHUB_WORKSPACE"
           mkdir -p "$TRIVY_CACHE"
           docker pull "$TRIVY_IMAGE"
           docker image inspect "$TRIVY_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
