@@ -8,6 +8,9 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 **Upstream:** [`rancher/webhook-service`](https://github.com/rancher/webhook-service), relevant branch/tag `v1.6` / `v0.9.15`, commit `5d68737e9c5edafc70a4963ffca1466e0b95c708`. This fork preserves upstream history, authorship, dates, tags, and the Apache-2.0 license. PastureStack claims authorship only for its own changes.
 
+The current public GitHub Release is
+[`v0.10.1`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.1).
+
 ## Runtime boundary
 
 The executable is `webhook-automation-service`. It binds to `127.0.0.1:8085` by default and accepts only the RSA public key needed to verify RS256 webhook tokens. It does not read or retain the control-plane private key.
