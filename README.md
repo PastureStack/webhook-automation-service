@@ -9,8 +9,9 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 **Upstream:** [`rancher/webhook-service`](https://github.com/rancher/webhook-service), relevant branch/tag `v1.6` / `v0.9.15`, commit `5d68737e9c5edafc70a4963ffca1466e0b95c708`. This fork preserves upstream history, authorship, dates, tags, and the Apache-2.0 license. PastureStack claims authorship only for its own changes.
 
 The current public GitHub Release is
-[`v0.10.1`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.1).
-The next candidate is `v0.10.2`; see the [candidate release notes](.github/release-notes/v0.10.2.md).
+[`v0.10.2`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.2).
+See the [release notes](.github/release-notes/v0.10.2.md) for its authorization
+changes and verification boundary.
 
 ## Runtime boundary
 
@@ -33,7 +34,11 @@ make build
 make integration-test
 ```
 
-`make package` creates the deterministic flat candidate asset `webhook-automation-service-0.10.2-linux-amd64.tar.xz`. The archive contains the executable plus compatibility, source, notice, and composite license files. The Server release verifies its SHA-256 digest before installation, so operators do not need an artifact mirror.
+The published `webhook-automation-service-0.10.2-linux-amd64.tar.xz` archive
+contains the executable plus compatibility, source, notice, and composite
+license files. Its SHA-256 is
+`fb2e4185b783ca58c171abef84fd5fa3e1451696c526ce25b7330445adcdcce7`.
+Server integration must verify that digest before installation.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS.md](MODIFICATIONS.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

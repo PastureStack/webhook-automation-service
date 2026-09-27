@@ -11,7 +11,7 @@ The migration preserves the v1.6 surface consumed by the orchestration engine an
 
 The legacy product strings above are compatibility identifiers, dependency names, or legal upstream references. They are not PastureStack product identity.
 
-The neutral executable is `webhook-automation-service`. The Server release may install an internal `webhook-service` compatibility link until the preserved launcher property is changed. Public release assets use only the neutral name.
+The neutral executable is `webhook-automation-service`. Server images retain an internal `webhook-service` compatibility link for the preserved launcher property. Public release assets use only the neutral name.
 
 Compatibility is deliberately constrained where old behavior conflicts with security:
 
@@ -22,4 +22,4 @@ Compatibility is deliberately constrained where old behavior conflicts with secu
 - Forward destinations are derived from the configured control-plane API authority and validated driver fields. The exact normalized scheme, host, and port are checked again immediately before network transport, so webhook input cannot select an arbitrary host or override the HTTP `Host` value.
 - Existing tokens without time claims remain valid. If `exp` or `nbf` is present, it must be an integer NumericDate and is enforced.
 
-Before release, validate all four drivers against the exact Server API, launcher supervision, Web Console create/list/delete flows, restart behavior, master-node failover, upgrade, rollback, and the immutable release archive in an isolated VM.
+The published v0.10.2 artifact passed its Linux component security release gate. Before claiming Server 8080 acceptance, validate all four drivers against the exact Server API, launcher supervision, Web Console create/list/delete flows, restart behavior, master-node failover, upgrade, and rollback in an isolated VM. The component release does not establish that Server acceptance.
