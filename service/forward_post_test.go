@@ -59,7 +59,7 @@ func TestCreateUpdateExecuteListAndDelete(t *testing.T) {
 	constructURL := fmt.Sprintf("%s/v1-webhooks/receivers?projectId=1a1", server.URL)
 	jsonStr := []byte(`{"driver":"forwardPost","name":"wh-name",
 		"forwardPostConfig": {"projectId": "1a5","serviceName": "pipeline-server", "port": "60080", "path": "/v1"}}`)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")
@@ -79,7 +79,7 @@ func TestCreateUpdateExecuteListAndDelete(t *testing.T) {
 
 	// Test getting the created webhook by id
 	byID := fmt.Sprintf("%s/v1-webhooks/receivers/1?projectId=1a1", server.URL)
-	request, err = http.NewRequest("GET", byID, nil)
+	request, err = managementRequest("GET", byID, nil)
 	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")
@@ -105,7 +105,7 @@ func TestCreateUpdateExecuteListAndDelete(t *testing.T) {
 	requireEqual(t, "execute status", response.Code, http.StatusOK)
 
 	//List webhooks
-	requestList, err := http.NewRequest("GET", constructURL, nil)
+	requestList, err := managementRequest("GET", constructURL, nil)
 	requireNoError(t, err)
 
 	requestList.Header.Set("Content-Type", "application/json")
@@ -126,7 +126,7 @@ func TestCreateUpdateExecuteListAndDelete(t *testing.T) {
 	requireSelfLink(t, wh.Links["self"])
 
 	//Delete
-	request, err = http.NewRequest("DELETE", byID, nil)
+	request, err = managementRequest("DELETE", byID, nil)
 	requireNoError(t, err)
 
 	request.Header.Set("Content-Type", "application/json")

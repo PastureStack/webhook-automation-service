@@ -85,6 +85,7 @@ func (rh *RouteHandler) ExecuteWithKey(uuid string, projectID string, request *h
 
 	filters := make(map[string]interface{})
 	filters["key"] = uuid
+	filters["kind"] = webhookReceiverKind
 	goCollection, err := apiClient.GenericObject.List(&client.ListOpts{
 		Filters: filters,
 	})
@@ -92,11 +93,18 @@ func (rh *RouteHandler) ExecuteWithKey(uuid string, projectID string, request *h
 		return 500, fmt.Errorf("Error %v filtering genericObjects by key", err)
 	}
 
-	if len(goCollection.Data) == 0 {
+	var webhook *client.GenericObject
+	for i := range goCollection.Data {
+		if goCollection.Data[i].Kind == webhookReceiverKind {
+			webhook = &goCollection.Data[i]
+			break
+		}
+	}
+	if webhook == nil {
 		return 403, fmt.Errorf("Requested webhook has been revoked/does not exist for this account")
 	}
 
-	resourceData := goCollection.Data[0].ResourceData
+	resourceData := webhook.ResourceData
 	driverID, ok := resourceData["driver"].(string)
 	if !ok {
 		return 400, fmt.Errorf("No driver provided")
@@ -123,14 +131,17 @@ func (rh *RouteHandler) ExecuteWithKey(uuid string, projectID string, request *h
 func validateWebhook(uuid string, apiClient *client.RancherClient) (int, error) {
 	filters := make(map[string]interface{})
 	filters["key"] = uuid
+	filters["kind"] = webhookReceiverKind
 	webhookCollection, err := apiClient.GenericObject.List(&client.ListOpts{
 		Filters: filters,
 	})
 	if err != nil {
 		return 500, err
 	}
-	if len(webhookCollection.Data) > 0 {
-		return 0, nil
+	for _, webhook := range webhookCollection.Data {
+		if webhook.Kind == webhookReceiverKind {
+			return 0, nil
+		}
 	}
 	return 403, fmt.Errorf("Requested webhook has been revoked")
 }

@@ -25,7 +25,7 @@ func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {
 	constructURL := fmt.Sprintf("%s/v1-webhooks/receivers?projectId=1a1", server.URL)
 	jsonStr := []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": 1, "max": 4, "deleteOption": "mostRecent"}}`)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {
 
 	// Test getting the created webhook by id
 	byID := fmt.Sprintf("%s/v1-webhooks/receivers/1?projectId=1a1", server.URL)
-	request, err = http.NewRequest("GET", byID, nil)
+	request, err = managementRequest("GET", byID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {
 	}
 
 	//List webhooks
-	requestList, err := http.NewRequest("GET", constructURL, nil)
+	requestList, err := managementRequest("GET", constructURL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestWebhookCreateAndExecuteScaleHost(t *testing.T) {
 	}
 
 	//Delete
-	request, err = http.NewRequest("DELETE", byID, nil)
+	request, err = managementRequest("DELETE", byID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 	constructURL := fmt.Sprintf("%s/v1-webhooks/receivers?projectId=1a1", server.URL)
 	jsonStr := []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": -1, "max": 4, "deleteOption": "mostRecent"}}`)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": 1, "max": -4, "deleteOption": "mostRecent"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1.5, "action": "up", "min": 1, "max": 4, "deleteOption": "mostRecent"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": 1.5, "max": 4, "deleteOption": "mostRecent"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": 1, "max": 4.5, "deleteOption": "mostRecent"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "up", "min": 1, "max": 4, "deleteOption": "random"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestWebhookCreateInvalidMinMaxActionScaleHost(t *testing.T) {
 
 	jsonStr = []byte(`{"driver":"scaleHost","name":"wh-name",
 		"scaleHostConfig": {"hostSelector": {"foo": "bar"}, "amount": 1, "action": "random", "min": 1, "max": 4, "deleteOption": "mostRecent"}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}

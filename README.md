@@ -10,6 +10,7 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 The current public GitHub Release is
 [`v0.10.1`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.1).
+The next candidate is `v0.10.2`; see the [candidate release notes](.github/release-notes/v0.10.2.md).
 
 ## Runtime boundary
 
@@ -32,7 +33,7 @@ make build
 make integration-test
 ```
 
-`make package` creates the deterministic flat GitHub Release asset `webhook-automation-service-0.10.1-linux-amd64.tar.xz`. The archive contains the executable plus compatibility, source, notice, and composite license files. The Server release verifies its SHA-256 digest before installation, so operators do not need an artifact mirror.
+`make package` creates the deterministic flat candidate asset `webhook-automation-service-0.10.2-linux-amd64.tar.xz`. The archive contains the executable plus compatibility, source, notice, and composite license files. The Server release verifies its SHA-256 digest before installation, so operators do not need an artifact mirror.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS.md](MODIFICATIONS.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
