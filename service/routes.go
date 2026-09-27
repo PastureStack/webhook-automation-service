@@ -53,11 +53,11 @@ func NewRouter(r *RouteHandler) *mux.Router {
 	router.Methods("GET").Path("/v1-webhooks").Handler(VersionHandler(schemas))
 	router.Methods("GET").Path("/v1-webhooks/").Handler(VersionHandler(schemas))
 
-	router.Methods("GET").Path("/v1-webhooks/schemas/").Handler(api.SchemasHandler(schemas))
-	router.Methods("GET").Path("/v1-webhooks/schemas").Handler(api.SchemasHandler(schemas))
+	router.Methods("GET").Path("/v1-webhooks/schemas/").Handler(roleAwareSchemasHandler(schemas, false))
+	router.Methods("GET").Path("/v1-webhooks/schemas").Handler(roleAwareSchemasHandler(schemas, false))
 
-	router.Methods("GET").Path("/v1-webhooks/schemas/{id}").Handler(api.SchemaHandler(schemas))
-	router.Methods("GET").Path("/v1-webhooks/schemas/{id}/").Handler(api.SchemaHandler(schemas))
+	router.Methods("GET").Path("/v1-webhooks/schemas/{id}").Handler(roleAwareSchemasHandler(schemas, true))
+	router.Methods("GET").Path("/v1-webhooks/schemas/{id}/").Handler(roleAwareSchemasHandler(schemas, true))
 
 	router.Methods("POST").Path("/v1-webhooks/receivers").Handler(f(schemas, r.ConstructPayload))
 	router.Methods("POST").Path("/v1-webhooks/receivers/").Handler(f(schemas, r.ConstructPayload))
@@ -75,6 +75,38 @@ func NewRouter(r *RouteHandler) *mux.Router {
 	router.Methods("POST").Path("/v1-webhooks/endpoint/").Handler(f(schemas, r.Execute))
 
 	return router
+}
+
+// The receiver write boundary depends on the authenticated project's roles.
+// Advertise exactly that boundary to clients, without mutating the shared
+// schema (the Rancher schema handler adds links while rendering a response).
+func roleAwareSchemasHandler(base *v1client.Schemas, single bool) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Capabilities vary by the authenticated project role; a shared cache
+		// must never serve an owner's writable schema to a read-only user.
+		rw.Header().Set("Cache-Control", "private, no-store")
+		rw.Header().Add("Vary", RoleAPIHeader)
+		scoped := *base
+		scoped.Data = make([]v1client.Schema, len(base.Data))
+		readonly := hasReadonlyRole(r)
+		for i, original := range base.Data {
+			copy := original
+			copy.Links = make(map[string]string, len(original.Links))
+			for key, value := range original.Links {
+				copy.Links[key] = value
+			}
+			if copy.Id == "receiver" && readonly {
+				copy.CollectionMethods = []string{"GET"}
+				copy.ResourceMethods = []string{"GET"}
+			}
+			scoped.Data[i] = copy
+		}
+		if single {
+			api.SchemaHandler(&scoped).ServeHTTP(rw, r)
+		} else {
+			api.SchemasHandler(&scoped).ServeHTTP(rw, r)
+		}
+	})
 }
 
 func driverSchemas() *v1client.Schemas {
