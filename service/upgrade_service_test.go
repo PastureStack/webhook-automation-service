@@ -27,7 +27,7 @@ func TestWebhookCreateAndExecuteServiceUpgrade(t *testing.T) {
 	jsonStr := []byte(`{"driver":"serviceUpgrade","name":"wh-name",
 		"serviceUpgradeConfig": {"serviceSelector": {"foo": "bar"}, "tag": "wh-tag", "batchSize": 1, "intervalMillis":2,
 		"startFirst": true}}`)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestWebhookCreateAndExecuteServiceUpgrade(t *testing.T) {
 
 	// Test getting the created webhook by id
 	byID := fmt.Sprintf("%s/v1-webhooks/receivers/1?projectId=1a1", server.URL)
-	request, err = http.NewRequest("GET", byID, nil)
+	request, err = managementRequest("GET", byID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestWebhookCreateAndExecuteServiceUpgrade(t *testing.T) {
 	}
 
 	//List webhooks
-	requestList, err := http.NewRequest("GET", constructURL, nil)
+	requestList, err := managementRequest("GET", constructURL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestWebhookCreateAndExecuteServiceUpgrade(t *testing.T) {
 	}
 
 	//Delete
-	request, err = http.NewRequest("DELETE", byID, nil)
+	request, err = managementRequest("DELETE", byID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestWebhookTag(t *testing.T) {
 		jsonStr := []byte(`{"driver":"serviceUpgrade","name":"` + name + `",
 			"serviceUpgradeConfig": {"serviceSelector": {"foo": "bar"}, "tag": "` + tag + `", "batchSize": 1, "intervalMillis":2,
 			"startFirst": true}}`)
-		request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+		request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +191,7 @@ func TestWebhookTag(t *testing.T) {
 			t.Fatalf("Tag is valid")
 		}
 		byID := fmt.Sprintf("%s/v1-webhooks/receivers/1?projectId=1a1", server.URL)
-		request, err = http.NewRequest("DELETE", byID, nil)
+		request, err = managementRequest("DELETE", byID, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func TestWebhookTag(t *testing.T) {
 		jsonStr := []byte(`{"driver":"serviceUpgrade","name":"` + name + `",
 			"serviceUpgradeConfig": {"serviceSelector": {"foo": "bar"}, "tag": "` + tag + `", "batchSize": 1, "intervalMillis":2,
 			"startFirst": true}}`)
-		request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+		request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,7 +228,7 @@ func TestWebhookInvalidBatchSizeInterval(t *testing.T) {
 	jsonStr := []byte(`{"driver":"serviceUpgrade","name":"wh-name",
 		"serviceUpgradeConfig": {"serviceSelector": {"foo": "bar"}, "tag": "wh-tag", "batchSize": 0, "intervalMillis":2,
 		"startFirst": true}}`)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestWebhookInvalidBatchSizeInterval(t *testing.T) {
 	jsonStr = []byte(`{"driver":"serviceUpgrade","name":"wh-name",
 		"serviceUpgradeConfig": {"serviceSelector": {"foo": "bar"}, "tag": "wh-tag", "batchSize": 1, "intervalMillis":0,
 		"startFirst": true}}`)
-	request, err = http.NewRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
+	request, err = managementRequest("POST", constructURL, bytes.NewBuffer(jsonStr))
 	if err != nil {
 		t.Fatal(err)
 	}

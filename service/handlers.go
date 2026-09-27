@@ -1,8 +1,10 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/PastureStack/webhook-automation-service/drivers"
 	"github.com/PastureStack/webhook-automation-service/model"
@@ -14,7 +16,9 @@ import (
 )
 
 const (
-	RoleAPIHeader = "X-API-Roles"
+	RoleAPIHeader       = "X-API-Roles"
+	projectAPIHeader    = "X-API-Project-Id"
+	webhookReceiverKind = "webhookReceiver"
 )
 
 var readonlyRoles = map[string]bool{
@@ -36,12 +40,18 @@ func (rh *RouteHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) (in
 		return 500, err
 	}
 	filters := make(map[string]interface{})
-	filters["kind"] = "webhookReceiver"
+	filters["kind"] = webhookReceiverKind
 	objs, err := apiClient.GenericObject.List(&client.ListOpts{
 		Filters: filters,
 	})
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
 	response := []model.Webhook{}
 	for _, obj := range objs.Data {
+		if obj.Kind != webhookReceiverKind {
+			continue
+		}
 		webhook, err := rh.convertToWebhookGenericObject(obj)
 		if err != nil {
 			logrus.Warnf("Skipping webhook %s because: %v", obj.Id, err)
@@ -60,7 +70,7 @@ func (rh *RouteHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) (in
 			continue
 		}
 		// we will hide the url to prevent readonly and restricted users to access endpoint
-		if readonlyRoles[getRoles(r)] {
+		if hasReadonlyRole(r) {
 			respWebhook.URL = ""
 		}
 
@@ -95,7 +105,7 @@ func (rh *RouteHandler) GetWebhook(w http.ResponseWriter, r *http.Request) (int,
 		return 500, err
 	}
 
-	if obj == nil {
+	if obj == nil || obj.Kind != webhookReceiverKind {
 		return 404, fmt.Errorf("Webhook not found")
 	}
 
@@ -115,7 +125,7 @@ func (rh *RouteHandler) GetWebhook(w http.ResponseWriter, r *http.Request) (int,
 		return 500, fmt.Errorf("create webhook response: %w", err)
 	}
 	// we will hide the url to prevent readonly and restricted users to access endpoint
-	if readonlyRoles[getRoles(r)] {
+	if hasReadonlyRole(r) {
 		respWebhook.URL = ""
 	}
 
@@ -124,7 +134,7 @@ func (rh *RouteHandler) GetWebhook(w http.ResponseWriter, r *http.Request) (int,
 }
 
 func (rh *RouteHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) (int, error) {
-	if readonlyRoles[getRoles(r)] {
+	if hasReadonlyRole(r) {
 		return http.StatusMethodNotAllowed, fmt.Errorf("user doesn't have the access to delete webhook")
 	}
 	vars := mux.Vars(r)
@@ -144,14 +154,17 @@ func (rh *RouteHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) (i
 		return 500, err
 	}
 
-	if obj == nil {
+	if obj == nil || obj.Kind != webhookReceiverKind {
 		return 404, fmt.Errorf("Webhook not found")
 	}
 
 	err = apiClient.GenericObject.Delete(obj)
 	if err != nil {
-		statusCode := err.(*client.ApiError).StatusCode
-		return statusCode, err
+		var apiErr *client.ApiError
+		if errors.As(err, &apiErr) {
+			return apiErr.StatusCode, err
+		}
+		return http.StatusInternalServerError, err
 	}
 	return 204, nil
 }
@@ -160,6 +173,16 @@ func getProjectID(r *http.Request) (string, int, error) {
 	projectID := r.URL.Query().Get("projectId")
 	if projectID == "" {
 		return "", 400, fmt.Errorf("projectId must be supplied as query parameter")
+	}
+	// The authenticated control-plane proxy supplies the effective project.
+	// Never let a different query project select this service's privileged API
+	// client after the caller was authorized for the header project.
+	authorized := r.Header.Get(projectAPIHeader)
+	if authorized == "" {
+		return "", http.StatusForbidden, fmt.Errorf("authorized project is required")
+	}
+	if authorized != projectID {
+		return "", http.StatusForbidden, fmt.Errorf("projectId does not match the authorized project")
 	}
 
 	return projectID, 0, nil
@@ -231,18 +254,28 @@ func (rh *RouteHandler) convertToWebhookGenericObject(genericObject client.Gener
 func (rh *RouteHandler) isUniqueName(webhookName string, projectID string, apiClient *client.RancherClient) (int, error) {
 	filters := make(map[string]interface{})
 	filters["name"] = webhookName
+	filters["kind"] = webhookReceiverKind
 	obj, err := apiClient.GenericObject.List(&client.ListOpts{
 		Filters: filters,
 	})
 	if err != nil {
 		return 500, err
 	}
-	if len(obj.Data) > 0 {
-		return 400, fmt.Errorf("Cannot have duplicate webhook name, webhook %s already exists", webhookName)
+	for _, existing := range obj.Data {
+		if existing.Kind == webhookReceiverKind && existing.Name == webhookName {
+			return 400, fmt.Errorf("Cannot have duplicate webhook name, webhook %s already exists", webhookName)
+		}
 	}
 	return 200, nil
 }
 
-func getRoles(r *http.Request) string {
-	return r.Header.Get(RoleAPIHeader)
+func hasReadonlyRole(r *http.Request) bool {
+	for _, header := range r.Header.Values(RoleAPIHeader) {
+		for _, role := range strings.Split(header, ",") {
+			if readonlyRoles[strings.ToLower(strings.TrimSpace(role))] {
+				return true
+			}
+		}
+	}
+	return false
 }

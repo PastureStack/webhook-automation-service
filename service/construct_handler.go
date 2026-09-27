@@ -21,7 +21,7 @@ import (
 const maximumConfigurationBodyBytes = 1 << 20
 
 func (rh *RouteHandler) ConstructPayload(w http.ResponseWriter, r *http.Request) (int, error) {
-	if readonlyRoles[getRoles(r)] {
+	if hasReadonlyRole(r) {
 		return http.StatusMethodNotAllowed, fmt.Errorf("user doesn't have the access to create webhook")
 	}
 	apiContext := api.GetApiContext(r)

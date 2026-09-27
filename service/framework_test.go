@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,19 @@ import (
 var server *httptest.Server
 var router *mux.Router
 var r *RouteHandler
+
+// managementRequest models the control plane's authenticated proxy. Public
+// webhook endpoint tests may carry this header, but do not depend on it.
+func managementRequest(method, url string, body io.Reader) (*http.Request, error) {
+	request, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if projectID := request.URL.Query().Get("projectId"); projectID != "" {
+		request.Header.Set(projectAPIHeader, projectID)
+	}
+	return request, nil
+}
 
 // TODO Refactor this test to use gocheck
 func init() {
@@ -86,7 +100,7 @@ func init() {
 
 func TestMissingProjectIdHeader(t *testing.T) {
 	constructURL := fmt.Sprintf("%s/v1-webhooks", server.URL)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer([]byte(`{}`)))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer([]byte(`{}`)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +121,7 @@ func TestMissingProjectIdHeader(t *testing.T) {
 
 func TestMissingContentTypeHeader(t *testing.T) {
 	constructURL := fmt.Sprintf("%s/v1-webhooks?projectId=1a1", server.URL)
-	request, err := http.NewRequest("POST", constructURL, bytes.NewBuffer([]byte(`{}`)))
+	request, err := managementRequest("POST", constructURL, bytes.NewBuffer([]byte(`{}`)))
 	if err != nil {
 		t.Fatal(err)
 	}
