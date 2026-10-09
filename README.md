@@ -8,10 +8,9 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 **Upstream:** [`rancher/webhook-service`](https://github.com/rancher/webhook-service), relevant branch/tag `v1.6` / `v0.9.15`, commit `5d68737e9c5edafc70a4963ffca1466e0b95c708`. This fork preserves upstream history, authorship, dates, tags, and the Apache-2.0 license. PastureStack claims authorship only for its own changes.
 
-The current public GitHub Release is
-[`v0.10.2`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.2).
-See the [release notes](.github/release-notes/v0.10.2.md) for its authorization
-changes and verification boundary.
+The current release candidate is `v0.10.4`, built with Go 1.27.2. Existing
+published tags and release assets remain immutable; candidate publication is
+a separate reviewed step.
 
 ## Runtime boundary
 
@@ -23,7 +22,7 @@ Security changes include strict RS256 verification without the retired JWT depen
 
 ## Build and test
 
-The source uses Go Modules and a checked-in vendor tree for reproducible builds. On Linux with Go 1.27, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
+The source uses Go Modules and a checked-in vendor tree for reproducible builds. On Linux with Go 1.27.2, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
 
 ```sh
 git clone https://github.com/PastureStack/webhook-automation-service.git
@@ -34,11 +33,11 @@ make build
 make integration-test
 ```
 
-The published `webhook-automation-service-0.10.2-linux-amd64.tar.xz` archive
+The candidate `webhook-automation-service-0.10.4-linux-amd64.tar.xz` archive
 contains the executable plus compatibility, source, notice, and composite
-license files. Its SHA-256 is
-`fb2e4185b783ca58c171abef84fd5fa3e1451696c526ce25b7330445adcdcce7`.
-Server integration must verify that digest before installation.
+license files. Formal producer packaging records its new SHA-256; Server
+integration must verify that digest before installation rather than reusing a
+previous release's checksum.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS.md](MODIFICATIONS.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
