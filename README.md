@@ -14,6 +14,10 @@ See the [release notes](.github/release-notes/v0.10.3.md) for the role-aware
 Receiver schema and its verification boundary. Server images must explicitly
 include this component; an older Server release is not upgraded by this tag.
 
+The current release candidate is `v0.10.4`, built with Go 1.27.2. Existing
+published tags and release assets remain immutable; candidate publication and
+matching Server acceptance are separate, incomplete steps.
+
 ## Runtime boundary
 
 The executable is `webhook-automation-service`. It binds to `127.0.0.1:8085` by default and accepts only the RSA public key needed to verify RS256 webhook tokens. It does not read or retain the control-plane private key.
@@ -24,7 +28,7 @@ Security changes include strict RS256 verification without the retired JWT depen
 
 ## Build and test
 
-The source uses Go Modules and a checked-in vendor tree for reproducible builds. On Linux with Go 1.27, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
+The source uses Go Modules and a checked-in vendor tree for reproducible builds. On Linux with Go 1.27.2, `bash`, `tar`, `xz`, `curl`, OpenSSL, and a C toolchain for race tests:
 
 ```sh
 git clone https://github.com/PastureStack/webhook-automation-service.git
@@ -40,6 +44,13 @@ contains the executable plus compatibility, source, notice, and composite
 license files. Its SHA-256 is
 `6babbc18cee9a192009cfadcd143e6b9a5f2b550c4dc419781f3e3657caa022a`.
 Server integration must verify that digest before installation.
+
+For published installations, use that `v0.10.3` asset. The candidate
+`webhook-automation-service-0.10.4-linux-amd64.tar.xz` archive contains the same
+executable and legal-file categories. Formal producer packaging records its
+new SHA-256; candidate integration must verify that digest before installation
+rather than reusing a previous release's checksum. An unpublished candidate
+must not be treated as the current public release.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS.md](MODIFICATIONS.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

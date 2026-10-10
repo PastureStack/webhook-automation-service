@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      CANDIDATE_VERSION: 0.10.3
-      GO_VERSION: 1.27.0
-      GO_LINUX_AMD64_SHA256: 675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+      CANDIDATE_VERSION: 0.10.4
+      GO_VERSION: 1.27.2
+      GO_LINUX_AMD64_SHA256: ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5
       TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
       TRIVY_CACHE: /tmp/pasturestack-webhook-automation-service-trivy-cache
       GOTOOLCHAIN: local
