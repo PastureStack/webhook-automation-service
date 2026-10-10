@@ -8,9 +8,15 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 **Upstream:** [`rancher/webhook-service`](https://github.com/rancher/webhook-service), relevant branch/tag `v1.6` / `v0.9.15`, commit `5d68737e9c5edafc70a4963ffca1466e0b95c708`. This fork preserves upstream history, authorship, dates, tags, and the Apache-2.0 license. PastureStack claims authorship only for its own changes.
 
+The current public GitHub Release is
+[`v0.10.3`](https://github.com/PastureStack/webhook-automation-service/releases/tag/v0.10.3).
+See the [release notes](.github/release-notes/v0.10.3.md) for the role-aware
+Receiver schema and its verification boundary. Server images must explicitly
+include this component; an older Server release is not upgraded by this tag.
+
 The current release candidate is `v0.10.4`, built with Go 1.27.2. Existing
-published tags and release assets remain immutable; candidate publication is
-a separate reviewed step.
+published tags and release assets remain immutable; candidate publication and
+matching Server acceptance are separate, incomplete steps.
 
 ## Runtime boundary
 
@@ -33,11 +39,18 @@ make build
 make integration-test
 ```
 
-The candidate `webhook-automation-service-0.10.4-linux-amd64.tar.xz` archive
+The published `webhook-automation-service-0.10.3-linux-amd64.tar.xz` archive
 contains the executable plus compatibility, source, notice, and composite
-license files. Formal producer packaging records its new SHA-256; Server
-integration must verify that digest before installation rather than reusing a
-previous release's checksum.
+license files. Its SHA-256 is
+`6babbc18cee9a192009cfadcd143e6b9a5f2b550c4dc419781f3e3657caa022a`.
+Server integration must verify that digest before installation.
+
+For published installations, use that `v0.10.3` asset. The candidate
+`webhook-automation-service-0.10.4-linux-amd64.tar.xz` archive contains the same
+executable and legal-file categories. Formal producer packaging records its
+new SHA-256; candidate integration must verify that digest before installation
+rather than reusing a previous release's checksum. An unpublished candidate
+must not be treated as the current public release.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS.md](MODIFICATIONS.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
