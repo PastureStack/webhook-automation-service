@@ -6,8 +6,8 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${repo_root}"
 
 go_version="$(GOTOOLCHAIN=local go env GOVERSION)"
-if [[ "${go_version}" != "go1.27.2" ]]; then
-    printf 'Go 1.27.2 is required; found %s\n' "${go_version}" >&2
+if [[ "${go_version}" != "go1.27.3" ]]; then
+    printf 'Go 1.27.3 is required; found %s\n' "${go_version}" >&2
     exit 1
 fi
 
