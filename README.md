@@ -8,7 +8,7 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 **Upstream:** [`rancher/webhook-service`](https://github.com/rancher/webhook-service), relevant branch/tag `v1.6` / `v0.9.15`, commit `5d68737e9c5edafc70a4963ffca1466e0b95c708`. This fork preserves upstream history, authorship, dates, tags, and the Apache-2.0 license. PastureStack claims authorship only for its own changes.
 
-The maintenance source builds `v0.10.5` with Go 1.27.3, including the
+The maintenance source builds `v0.10.6` with Go 1.27.3, including the
 [crypto/x509 security fix](https://go.dev/doc/devel/release#go1.27.3).
 Use the [latest published GitHub Release](https://github.com/PastureStack/webhook-automation-service/releases/latest)
 and its exact asset checksum for installation. A source version is not proof
@@ -38,7 +38,7 @@ make build
 make integration-test
 ```
 
-The `webhook-automation-service-0.10.5-linux-amd64.tar.xz` archive produced by
+The `webhook-automation-service-0.10.6-linux-amd64.tar.xz` archive produced by
 this source contains the executable plus compatibility, source, notice, and
 composite license files. Formal producer packaging records its SHA-256;
 installation must verify the matching published immutable asset rather than
@@ -50,3 +50,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS
 ## License and attribution
 
 The inherited project remains licensed under the [Apache License 2.0](LICENSE). Copyright and attribution for inherited and vendored work remain with their respective authors and contributors. No upstream work is presented as original PastureStack work.
+
+## October 2026 security maintenance
+
+Maintained Go builds select the patched Go 1.27.3 compiler without raising the existing Go language requirement. Release artifacts must pass the repository's existing checks before publication.
