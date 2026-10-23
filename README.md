@@ -50,3 +50,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md), [ORIGIN.md](ORIGIN.md), [MODIFICATIONS
 ## License and attribution
 
 The inherited project remains licensed under the [Apache License 2.0](LICENSE). Copyright and attribution for inherited and vendored work remain with their respective authors and contributors. No upstream work is presented as original PastureStack work.
+
+## October 2026 security maintenance
+
+Maintained Go builds select the patched Go 1.27.3 compiler without raising the existing Go language requirement. Release artifacts must pass the repository's existing checks before publication.
